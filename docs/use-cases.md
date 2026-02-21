@@ -83,3 +83,11 @@ SaaS companies serving per-user skill content that varies by subscription tier, 
 **Community input:**
 
 > "At Astronomer we need to serve different skill content to different customers based on their subscription tier and role, with full audit logging. This goes beyond enterprise adoption — it's about multi-tenant commercial delivery of skills with fine-grained access control." — [Kaxil Naik](https://github.com/kaxil)
+
+## 10. Token-Efficient Large-Dataset Processing
+
+Skills that instruct agents to process large datasets via code execution rather than flowing all data through the model's context window. Instead of making direct MCP tool calls and loading results into context for analysis, the agent writes code that fetches, filters, and transforms data locally — only surfacing the final results to the model.
+
+**Example:** An agent analyzing 5,000+ GitHub issues using MCP tools. In direct mode, the context window overflows after ~600 issues. With a code mode skill, the agent writes TypeScript that fetches issues in batches, filters by criteria, aggregates statistics, and returns only the summary — completing with 100% success at a fraction of the token cost.
+
+**Related:** This use case is explored in depth in [code-mode.md](code-mode.md), which documents the "code mode" pattern and its bidirectional relationship with skills and MCP. See also [Anthropic's blog post on code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp) and [Cloudflare's "Code Mode"](https://blog.cloudflare.com/code-mode/).

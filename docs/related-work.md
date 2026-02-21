@@ -25,6 +25,9 @@ Original implementations from external repositories (example implementations in 
 | mcp-execution | bug-ops | [github.com/bug-ops/mcp-execution](https://github.com/bug-ops/mcp-execution) | Compiles MCP servers into skill packages |
 | Astronomer agents | Kaxil Naik | [github.com/astronomer/agents](https://github.com/astronomer/agents) | Skills distribution via MCP for Apache Airflow |
 | my-cool-proxy | karashiiro | [github.com/karashiiro/my-cool-proxy](https://github.com/karashiiro/my-cool-proxy) | MCP gateway server with skills as resources via Lua scripts |
+| code-execution-with-mcp | Ola Hungerford | [github.com/olaservo/code-execution-with-mcp](https://github.com/olaservo/code-execution-with-mcp) | Code execution vs direct MCP tool calls demo |
+| lootbox | jx-codes | [github.com/jx-codes/lootbox](https://github.com/jx-codes/lootbox) | Code mode with auto-discovery and type generation (successor to codemode-mcp) |
+| mcp-server-code-execution-mode | elusznik | [github.com/elusznik/mcp-server-code-execution-mode](https://github.com/elusznik/mcp-server-code-execution-mode) | Python code execution in rootless containers with MCP proxying |
 
 ## External Resources
 
@@ -33,4 +36,9 @@ Original implementations from external repositories (example implementations in 
 - **"MCP and Skills: Why Not Both?"** (Kurtis Van Gent): [kvg.dev/posts/20260125-skills-and-mcp/](https://kvg.dev/posts/20260125-skills-and-mcp/) — Frames MCP (connectivity) and Skills (context saturation) as complementary; discusses hybrid approaches
 - **Conceptual spec visualization** (Keith Groves): [enact-465fb1fc.mintlify.app/specification/draft/server/skills](https://enact-465fb1fc.mintlify.app/specification/draft/server/skills) — "What if" exploration
 - **Apache Airflow AIP-91** (MCP integration): [cwiki.apache.org/…/AIP-91+-+MCP](https://cwiki.apache.org/confluence/display/AIRFLOW/AIP-91+-+MCP)
+- **Cloudflare "Code Mode: the better way to use MCP":** [blog.cloudflare.com/code-mode/](https://blog.cloudflare.com/code-mode/) — Introduces the "code mode" pattern: converting MCP tools into TypeScript APIs and executing agent-generated code in sandboxed V8 isolates
+- **Anthropic "Code execution with MCP: Building more efficient agents":** [anthropic.com/engineering/code-execution-with-mcp](https://www.anthropic.com/engineering/code-execution-with-mcp) — Filesystem-based tool discovery with progressive disclosure; reports 98.7% token reduction
+- **Goose Code Mode MCP:** [block.github.io/goose/blog/2025/12/15/code-mode-mcp/](https://block.github.io/goose/blog/2025/12/15/code-mode-mcp/) — Open-source code mode implementation using embedded Rust-based JS engine
+- **CodeAct: Executable Code Actions Elicit Better LLM Agents** (Wang et al., ICML 2024): [arXiv 2402.01030](https://arxiv.org/abs/2402.01030) — Foundational academic validation of code-as-action paradigm; up to 20% higher success rate vs JSON tool-calling across 17 LLMs
+- **Voyager: An Open-Ended Embodied Agent with Large Language Models** (Wang et al., NeurIPS 2023): [arXiv 2305.16291](https://arxiv.org/abs/2305.16291) — Pioneered persistent skill library of executable code
 - **Video background:** [youtube.com/watch?v=CEvIs9y1uog](https://www.youtube.com/watch?v=CEvIs9y1uog)

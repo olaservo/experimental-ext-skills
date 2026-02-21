@@ -106,6 +106,14 @@ Use server instructions as a pointer to a resource: "If you need to do X, fetch 
 
 **Limitation:** May not work with off-the-shelf servers where you can't modify their instructions.
 
+## Cross-Cutting Pattern: Code Mode
+
+Several of the approaches above intersect with an emerging pattern called "code mode," where agents generate and execute code against typed wrapper files for MCP tools rather than making direct tool calls. Code mode is not a distribution mechanism (it doesn't address how skills are discovered or delivered) but rather a consumption pattern — it changes how agents execute against the tools that skills describe.
+
+Code mode connects to the Gateway/Composition Pattern (Approach 4) by offering another way to compose tool calls without server boundaries, and to Server Instructions Reference (Approach 5) by naturally implementing deferred loading through filesystem-based discovery.
+
+See [code-mode.md](code-mode.md) for full analysis, prior art, and open questions.
+
 ## 6. Official Convention as Intermediate Step
 
 A documented "MCP Skills Convention" as a middle path between ad-hoc experiments and protocol extension. This could:

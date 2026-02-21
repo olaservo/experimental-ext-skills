@@ -41,6 +41,7 @@ See [problem-statement.md](docs/problem-statement.md) for full details.
 | [Approaches](docs/approaches.md) | Approaches being explored (not mutually exclusive) |
 | [Open Questions](docs/open-questions.md) | Unresolved questions with community input |
 | [Experimental Findings](docs/experimental-findings.md) | Results from implementations and testing |
+| [Code Mode](docs/code-mode.md) | Code execution pattern and its relationship to skills and MCP |
 | [Related Work](docs/related-work.md) | SEPs, implementations, and external resources |
 | [Contributing](CONTRIBUTING.md) | How to participate |
 
