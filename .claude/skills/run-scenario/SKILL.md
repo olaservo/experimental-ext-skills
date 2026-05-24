@@ -13,8 +13,27 @@ obvious from reading the harness code alone.
 
 - **client** (required): `fast-agent` | `codex` | `goose`.
 - **scenario** (optional): scenario id (YAML filename stem). Default: `pr-review`.
+- **model** (required — confirm with the user, even when defaulting): which
+  model to test. The scenario YAML's `models.<client>` entry is the *default*,
+  not a silent choice — different models are the whole point of the
+  cross-client matrix, so always surface the option:
+  - **fast-agent**: pick a `FAST_AGENT_VARIANT` (`anthropic` | `openai` |
+    `google` | `openrouter`), or set `FAST_AGENT_MODEL=<id>` for an ad-hoc
+    model (e.g. one of the OpenRouter alternates listed under the fast-agent
+    section below). Variants resolve to the scenario YAML's
+    `models.fast-agent.<variant>` map.
+  - **codex**: scenario default, override with `CODEX_MODEL=<id>` (see
+    pr-review sub-page for known-working TPM-tier combos).
+  - **goose**: scenario default, override with `GOOSE_MODEL=<id>` (and
+    optionally `GOOSE_PROVIDER`).
 - **pr_number** (optional, pr-review only): target a specific open PR
   instead of the auto-detected head of `feature/input-validation-enhancement`.
+
+If invoked without an explicit client / model (e.g. bare `/run-scenario`),
+ask the user via `AskUserQuestion` before preflight — one batched question
+for client + scenario + model. Show the scenario default as the recommended
+option; for fast-agent, list the four variants. Skip the question only if
+the user named all three in the same turn.
 
 ## Scenarios
 
