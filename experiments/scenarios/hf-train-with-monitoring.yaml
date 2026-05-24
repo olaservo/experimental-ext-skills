@@ -70,6 +70,5 @@ models:
     #   openrouter.moonshotai/kimi-k2.6   (quality leader)
     #   openrouter.qwen/qwen3.7-max       (latest Qwen, max tier)
     openrouter: openrouter.deepseek/deepseek-v4-pro
-  gemini-cli: gemini-2.5-flash
   goose: claude-sonnet-4-6
   codex: gpt-5.1-codex-mini
