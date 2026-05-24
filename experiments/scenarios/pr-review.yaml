@@ -4,7 +4,7 @@
 id: pr-review
 kind: pr-review
 description: >-
-  Agent activates the pull-requests skill bundled with olaservo/github-mcp-server,
+  Agent activates the review-pr skill bundled with olaservo/github-mcp-server,
   reviews a PR with four intentional seams, and posts a real review via the
   three-step pending-review workflow.
 
@@ -48,4 +48,4 @@ models:
   goose: claude-sonnet-4-6
   codex: gpt-5.1-codex
 
-expected_skill_uri: skill://pull-requests/SKILL.md
+expected_skill_uri: skill://github/review-pr/SKILL.md

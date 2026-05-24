@@ -32,7 +32,7 @@ _BY_KIND = {
 
 def evaluate(
     scenario: dict,
-    calls: list[tuple[str, dict]],
+    calls: list[tuple[str, str, dict]],
     *,
     client_id: str,
     final_text: str | None = None,

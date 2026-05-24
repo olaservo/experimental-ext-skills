@@ -94,14 +94,15 @@ SERVER_ALIAS = CTX["server_alias"]
 fast = FastAgent(f"skills-over-mcp scenario: {SCENARIO['id']}")
 
 
-def _extract_tool_calls(agent) -> list[tuple[str, dict]]:
-    """Walk message_history; return [(bare_name, args), ...].
+def _extract_tool_calls(agent) -> list[tuple[str, str, dict]]:
+    """Walk message_history; return [(bare_name, raw_name, args), ...].
 
-    fast-agent namespaces MCP tools as `<server>__<tool>`; strip so the
-    evaluator matches bare names.
+    fast-agent namespaces MCP tools as `<server>__<tool>`. The evaluator
+    matches on the bare name; `raw_name` preserves the namespace so the
+    server identifier survives in the recorded result.
     """
     runner = agent.runner
-    calls: list[tuple[str, dict]] = []
+    calls: list[tuple[str, str, dict]] = []
     for msg in runner.message_history:
         if not msg.tool_calls:
             continue
@@ -110,7 +111,7 @@ def _extract_tool_calls(agent) -> list[tuple[str, dict]]:
             raw = getattr(params, "name", None) or ""
             name = raw.split("__", 1)[1] if "__" in raw else raw
             args = dict(getattr(params, "arguments", None) or {})
-            calls.append((name, args))
+            calls.append((name, raw, args))
     return calls
 
 

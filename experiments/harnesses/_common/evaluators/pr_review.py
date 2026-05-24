@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from _common.tokens import skill_name_from_arg
+from _common.tokens import matches_expected_skill_uri
 
 VALID_VERDICTS = {"APPROVE", "REQUEST_CHANGES", "COMMENT"}
 MUTATING_TOOLS = {"pull_request_review_write", "add_comment_to_pending_review"}
@@ -43,12 +43,11 @@ SKILL_READ_ALIASES = {
 def evaluate(
     *,
     scenario: dict,
-    calls: list[tuple[str, dict]],
+    calls: list[tuple[str, str, dict]],
     client_id: str,
     final_text: str | None = None,  # unused for pr-review
 ) -> dict[str, Any]:
     expected_skill_uri = scenario["expected_skill_uri"]
-    expected_skill_name = skill_name_from_arg(expected_skill_uri)
     skill_read_names = SKILL_READ_ALIASES[client_id]
 
     read_skill_idx = None
@@ -60,7 +59,7 @@ def evaluate(
     verdict = None
     other_calls: list[tuple[int, str]] = []
 
-    for i, (name, args) in enumerate(calls):
+    for i, (name, _raw_name, args) in enumerate(calls):
         args = args or {}
         is_skill_read = name in skill_read_names
         is_mutating = name in MUTATING_TOOLS
@@ -68,7 +67,7 @@ def evaluate(
         if is_skill_read:
             target = args.get("uri") or args.get("path") or args.get("name") or ""
             if (
-                skill_name_from_arg(target) == expected_skill_name
+                matches_expected_skill_uri(target, expected_skill_uri)
                 and read_skill_idx is None
             ):
                 read_skill_idx = i

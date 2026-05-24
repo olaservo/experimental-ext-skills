@@ -15,12 +15,18 @@ from _common.pr import find_review_url, resolve_pr_number
 from _common.report import render_report, write_result_json
 from _common.scenario import load_scenario, parse_scenario_arg
 from _common.setup import report_and_save, setup_run
-from _common.tokens import resolve_github_token, resolve_hf_token, skill_name_from_arg
+from _common.tokens import (
+    matches_expected_skill_uri,
+    resolve_github_token,
+    resolve_hf_token,
+    skill_name_from_arg,
+)
 
 __all__ = [
     "evaluate",
     "find_review_url",
     "load_scenario",
+    "matches_expected_skill_uri",
     "parse_scenario_arg",
     "render_report",
     "report_and_save",

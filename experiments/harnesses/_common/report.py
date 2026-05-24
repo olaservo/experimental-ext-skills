@@ -24,7 +24,7 @@ _UNSET = object()
 
 def render_report(
     *,
-    calls: list[tuple[str, dict]],
+    calls: list[tuple[str, str, dict]],
     result: dict,
     review_url=_UNSET,
     elapsed_s: float,
@@ -37,9 +37,12 @@ def render_report(
     print("Ordered tool calls:", file=out)
     if not calls:
         print("  (none)", file=out)
-    for i, (name, args) in enumerate(calls):
+    for i, (name, raw_name, args) in enumerate(calls):
         compact = {k: v for k, v in (args or {}).items() if k != "body"}
-        print(f"  [{i}] {name}  {json.dumps(compact, default=str)[:180]}", file=out)
+        # Surface the namespaced raw name when it differs from the bare
+        # name — that's where 3 of 4 clients carry the server identifier.
+        prefix = f"{name} (raw={raw_name})" if raw_name and raw_name != name else name
+        print(f"  [{i}] {prefix}  {json.dumps(compact, default=str)[:180]}", file=out)
     print(file=out)
 
     for criterion in result["criteria"]:
@@ -93,7 +96,7 @@ def write_result_json(
     scenario_id: str,
     model: str | None,
     result: dict,
-    tool_calls: list[tuple[str, dict]],
+    tool_calls: list[tuple[str, str, dict]],
     review_url=_UNSET,
     elapsed_ms: int,
     error: str | None = None,
@@ -119,7 +122,10 @@ def write_result_json(
         "model": model,
         "overall": result["overall"],
         "scenario_id": scenario_id,
-        "tool_calls": [{"args": dict(args or {}), "name": name} for name, args in tool_calls],
+        "tool_calls": [
+            {"args": dict(args or {}), "name": name, "raw_name": raw_name}
+            for name, raw_name, args in tool_calls
+        ],
     }
     if review_url is not _UNSET:
         payload["review_url"] = review_url

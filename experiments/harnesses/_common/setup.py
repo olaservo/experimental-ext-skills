@@ -78,7 +78,7 @@ def report_and_save(
     scenario: dict,
     ctx: dict,
     model: str | None,
-    calls: list[tuple[str, dict]],
+    calls: list[tuple[str, str, dict]],
     result: dict,
     final_text: str | None,
     elapsed_s: float,

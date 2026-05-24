@@ -84,15 +84,19 @@ def _resolve_codex_command() -> list[str]:
     return [resolved]
 
 
-def _extract_tool_calls(events: list[dict]) -> tuple[list[tuple[str, dict]], str | None]:
+def _extract_tool_calls(events: list[dict]) -> tuple[list[tuple[str, str, dict]], str | None]:
     """Walk codex's JSONL events.
 
     codex's `read_mcp_resource` is a built-in but emits through the
     same pipeline as MCP dispatches, so it arrives as `mcp_tool_call`
     with tool="read_mcp_resource" — no special-casing needed.
     Schema: codex-rs/exec/src/exec_events.rs.
+
+    codex doesn't prefix tool names client-side, so `raw_name == name`;
+    when the tool is `read_mcp_resource` the server identifier lives
+    in `args["server"]`.
     """
-    calls: list[tuple[str, dict]] = []
+    calls: list[tuple[str, str, dict]] = []
     final_text: str | None = None
     for event in events:
         if event.get("type") != "item.completed":
@@ -109,7 +113,7 @@ def _extract_tool_calls(events: list[dict]) -> tuple[list[tuple[str, dict]], str
                     args = {}
             if not isinstance(args, dict):
                 args = {}
-            calls.append((name, args))
+            calls.append((name, name, args))
         elif it_type == "agent_message":
             text = item.get("text")
             if isinstance(text, str):

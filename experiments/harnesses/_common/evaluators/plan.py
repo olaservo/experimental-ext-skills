@@ -83,7 +83,7 @@ def _matches_phrase(text: str, candidates: list[str]) -> bool:
     return any(re.search(re.escape(c), text, re.IGNORECASE) for c in candidates)
 
 
-def _phrase_haystack(final_text: str | None, calls: list[tuple[str, dict]]) -> str:
+def _phrase_haystack(final_text: str | None, calls: list[tuple[str, str, dict]]) -> str:
     """Concatenate the agent's final text with all call argument values.
 
     For dry-run scenarios the prescriptions live inside the agent's
@@ -93,7 +93,7 @@ def _phrase_haystack(final_text: str | None, calls: list[tuple[str, dict]]) -> s
     only that misses the real signal.
     """
     parts: list[str] = [final_text or ""]
-    for _, args in calls:
+    for _, _raw, args in calls:
         if args:
             parts.append(json.dumps(args, default=str))
     return "\n".join(parts)
@@ -106,7 +106,7 @@ def _read_target(args: dict) -> str:
 def evaluate(
     *,
     scenario: dict,
-    calls: list[tuple[str, dict]],
+    calls: list[tuple[str, str, dict]],
     client_id: str,
     final_text: str | None = None,
 ) -> dict[str, Any]:
@@ -128,7 +128,7 @@ def evaluate(
     gate_indices: list[int] = []
     other_calls: list[tuple[int, str]] = []
 
-    for i, (name, args) in enumerate(calls):
+    for i, (name, _raw_name, args) in enumerate(calls):
         args = args or {}
         is_skill_read = name in skill_read_names
         is_gate = name in gate_tools
@@ -165,7 +165,7 @@ def evaluate(
         gate_idx = None
     else:
         gate_idx = next(
-            (i for i, (n, _) in enumerate(calls)
+            (i for i, (n, _r, _a) in enumerate(calls)
              if n not in skill_read_names and n not in DISCOVERY_TOOLS),
             None,
         )

@@ -26,6 +26,10 @@ from _common import (  # noqa: E402
     evaluate, load_scenario, render_report, write_result_json,
 )
 from _common.setup import setup_run  # noqa: E402
+from _common.tokens import (  # noqa: E402
+    matches_expected_skill_uri,
+    skill_name_from_arg,
+)
 
 
 SKILL_URI = "skill://pull-requests/SKILL.md"
@@ -55,20 +59,78 @@ def _flat(result):
     return {**{c["key"]: c["ok"] for c in result["criteria"]}, **result["raw"]}
 
 
-def _read(path: str = SKILL_URI) -> tuple[str, dict]:
-    return ("read_mcp_resource", {"uri": path})
+# Tool-call shape is (name, raw_name, args) — see _common/report.py.
+# Tests don't care about raw_name semantics, so helpers default it to
+# the bare name. _t() is the inline helper for ad-hoc tuples.
+def _t(name: str, args: dict, raw_name: str | None = None) -> tuple[str, str, dict]:
+    return (name, raw_name if raw_name is not None else name, args)
 
 
-def _create() -> tuple[str, dict]:
-    return ("pull_request_review_write", {"method": "create", "pullNumber": 7})
+def _read(path: str = SKILL_URI) -> tuple[str, str, dict]:
+    return _t("read_mcp_resource", {"uri": path})
 
 
-def _comment(line: int = 10) -> tuple[str, dict]:
-    return ("add_comment_to_pending_review", {"line": line})
+def _create() -> tuple[str, str, dict]:
+    return _t("pull_request_review_write", {"method": "create", "pullNumber": 7})
 
 
-def _submit(event: str = "REQUEST_CHANGES") -> tuple[str, dict]:
-    return ("pull_request_review_write", {"method": "submit_pending", "event": event})
+def _comment(line: int = 10) -> tuple[str, str, dict]:
+    return _t("add_comment_to_pending_review", {"line": line})
+
+
+def _submit(event: str = "REQUEST_CHANGES") -> tuple[str, str, dict]:
+    return _t("pull_request_review_write", {"method": "submit_pending", "event": event})
+
+
+# ---------------------------------------------------------------------- skill_name_from_arg
+
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        # legacy un-namespaced URIs (still in use on hf-mcp-server)
+        ("skill://pull-requests/SKILL.md", "pull-requests"),
+        ("skill://huggingface-llm-trainer/SKILL.md", "huggingface-llm-trainer"),
+        ("skill://huggingface-llm-trainer/references/training_methods.md",
+         "huggingface-llm-trainer"),
+        # namespaced URIs (github-mcp-server advertises `skill://github/<name>/...`)
+        ("skill://github/pull-requests/SKILL.md", "pull-requests"),
+        ("skill://github/create-pr/SKILL.md", "create-pr"),
+        ("skill://github/pull-requests/references/X.md", "pull-requests"),
+        ("skill://github/foo/scripts/sub/file.py", "foo"),
+        # non-URI forms (goose's load_skill name argument)
+        ("pull-requests", "pull-requests"),
+        ("pull-requests/scripts/train.py", "pull-requests"),
+        ("github_skills__pull-requests", "pull-requests"),
+    ],
+)
+def test_skill_name_from_arg(val: str, expected: str):
+    assert skill_name_from_arg(val) == expected
+
+
+@pytest.mark.parametrize(
+    "target,expected_uri,ok",
+    [
+        # URI-form target: byte-for-byte equality required.
+        ("skill://github/pull-requests/SKILL.md",
+         "skill://github/pull-requests/SKILL.md", True),
+        # Namespace divergence MUST fail under URI-strict matching even
+        # though both sides parse to the same skill name.
+        ("skill://github/pull-requests/SKILL.md",
+         "skill://pull-requests/SKILL.md", False),
+        ("skill://pull-requests/SKILL.md",
+         "skill://github/pull-requests/SKILL.md", False),
+        # Bare-name target: falls back to parsed-name comparison.
+        ("pull-requests", "skill://github/pull-requests/SKILL.md", True),
+        ("pull-requests", "skill://pull-requests/SKILL.md", True),
+        # goose's <server>__<name> disambiguation form.
+        ("github_skills__pull-requests",
+         "skill://github/pull-requests/SKILL.md", True),
+        # Wrong skill name in bare-name form.
+        ("other-skill", "skill://github/pull-requests/SKILL.md", False),
+    ],
+)
+def test_matches_expected_skill_uri(target: str, expected_uri: str, ok: bool):
+    assert matches_expected_skill_uri(target, expected_uri) is ok
 
 
 # ---------------------------------------------------------------------- pr-review evaluator
@@ -84,7 +146,7 @@ def test_pr_happy_path_passes_all_five():
 
 def test_pr_invalid_verdict_fails_submit():
     calls = [_read(), _create(), _comment(),
-             ("pull_request_review_write", {"method": "submit_pending", "event": "WAT"})]
+             _t("pull_request_review_write", {"method": "submit_pending", "event": "WAT"})]
     r = evaluate(PR_SCENARIO, calls, client_id="codex")
     assert _flat(r)["submit_ok"] is False
     assert r["overall"] is False
@@ -100,11 +162,25 @@ def test_pr_skill_read_after_first_write_fails_criterion_one():
 
 
 def test_pr_wrong_skill_uri_does_not_count_as_read():
-    calls = [("read_mcp_resource", {"uri": "skill://other/SKILL.md"}),
+    calls = [_t("read_mcp_resource", {"uri": "skill://other/SKILL.md"}),
              _create(), _comment(), _submit()]
     r = evaluate(PR_SCENARIO, calls, client_id="codex")
     assert _flat(r)["skill_before_write"] is False
     assert r["other_calls"] == []  # wrong-URI read still expected, not flagged
+
+
+def test_pr_namespace_divergence_fails_uri_match():
+    # Scenario YAML and target URI parse to the same skill name
+    # (`pull-requests`), but their full URIs differ — one has a
+    # `github/` namespace segment, the other does not. URI-strict
+    # matching MUST reject this; name-based matching would have
+    # silently passed it (the regression we hit when github-mcp-server
+    # added the `skill://github/...` namespace).
+    scenario = {**PR_SCENARIO, "expected_skill_uri": "skill://pull-requests/SKILL.md"}
+    calls = [_t("read_mcp_resource", {"uri": "skill://github/pull-requests/SKILL.md"}),
+             _create(), _comment(), _submit()]
+    r = evaluate(scenario, calls, client_id="codex")
+    assert _flat(r)["skill_before_write"] is False
 
 
 def test_pr_comment_before_create_does_not_satisfy_comments_ok():
@@ -117,8 +193,8 @@ def test_pr_comment_before_create_does_not_satisfy_comments_ok():
 
 def test_pr_single_shot_bypass_is_flagged():
     # method="create" with event set is the SEP's single-shot bypass.
-    single_shot = ("pull_request_review_write",
-                   {"method": "create", "event": "APPROVE"})
+    single_shot = _t("pull_request_review_write",
+                     {"method": "create", "event": "APPROVE"})
     calls = [_read(), single_shot, _comment(), _submit()]
     r = evaluate(PR_SCENARIO, calls, client_id="codex")
     f = _flat(r)
@@ -128,9 +204,9 @@ def test_pr_single_shot_bypass_is_flagged():
 
 def test_pr_unrelated_calls_appear_in_other_calls():
     calls = [
-        ("pull_request_read", {}),
+        _t("pull_request_read", {}),
         _read(), _create(), _comment(),
-        ("list_issues", {}),
+        _t("list_issues", {}),
         _submit(),
     ]
     r = evaluate(PR_SCENARIO, calls, client_id="codex")
@@ -145,21 +221,21 @@ def test_fast_agent_accepts_read_skill_not_read_mcp_resource():
     # fast-agent: {read_skill} only.
     r1 = evaluate(PR_SCENARIO, [_read(), _create(), _comment(), _submit()],
                   client_id="fast-agent")
-    r2 = evaluate(PR_SCENARIO, [("read_skill", {"path": SKILL_URI}), _create(), _comment(), _submit()],
+    r2 = evaluate(PR_SCENARIO, [_t("read_skill", {"path": SKILL_URI}), _create(), _comment(), _submit()],
                   client_id="fast-agent")
     assert _flat(r1)["skill_before_write"] is False
     assert _flat(r2)["skill_before_write"] is True
 
 
 def test_goose_accepts_both_read_aliases():
-    for read_call in [_read(), ("read_skill", {"path": SKILL_URI})]:
+    for read_call in [_read(), _t("read_skill", {"path": SKILL_URI})]:
         r = evaluate(PR_SCENARIO, [read_call, _create(), _comment(), _submit()],
                      client_id="goose")
         assert _flat(r)["skill_before_write"] is True
 
 
 def test_gemini_credits_activate_skill_with_matching_name():
-    calls = [("activate_skill", {"name": "pull-requests"}),
+    calls = [_t("activate_skill", {"name": "pull-requests"}),
              _create(), _comment(), _submit()]
     r_gemini = evaluate(PR_SCENARIO, calls, client_id="gemini-cli")
     r_codex = evaluate(PR_SCENARIO, calls, client_id="codex")
@@ -170,7 +246,7 @@ def test_gemini_credits_activate_skill_with_matching_name():
 
 
 def test_goose_credits_load_skill_with_matching_name():
-    calls = [("load_skill", {"name": "pull-requests"}),
+    calls = [_t("load_skill", {"name": "pull-requests"}),
              _create(), _comment(), _submit()]
     r = evaluate(PR_SCENARIO, calls, client_id="goose")
     assert _flat(r)["skill_before_write"] is True
@@ -178,14 +254,14 @@ def test_goose_credits_load_skill_with_matching_name():
 
 
 def test_helper_with_wrong_skill_name_does_not_count():
-    calls = [("load_skill", {"name": "other-skill"}),
+    calls = [_t("load_skill", {"name": "other-skill"}),
              _create(), _comment(), _submit()]
     r = evaluate(PR_SCENARIO, calls, client_id="goose")
     assert _flat(r)["skill_before_write"] is False
 
 
 def test_goose_disambiguated_skill_name_is_credited():
-    calls = [("load_skill", {"name": "github_skills__pull-requests"}),
+    calls = [_t("load_skill", {"name": "github_skills__pull-requests"}),
              _create(), _comment(), _submit()]
     r = evaluate(PR_SCENARIO, calls, client_id="goose")
     assert _flat(r)["skill_before_write"] is True
@@ -194,8 +270,8 @@ def test_goose_disambiguated_skill_name_is_credited():
 
 # ---------------------------------------------------------------------- plan evaluator
 
-def _hf_read(path: str = HF_SKILL_URI) -> tuple[str, dict]:
-    return ("read_mcp_resource", {"uri": path})
+def _hf_read(path: str = HF_SKILL_URI) -> tuple[str, str, dict]:
+    return _t("read_mcp_resource", {"uri": path})
 
 
 _PLAN_HAPPY_TEXT = (
@@ -243,7 +319,7 @@ def test_plan_no_references_does_not_fail_overall():
 
 def test_plan_skill_read_after_gate_call_fails_first():
     # Even if skill is read, doing it AFTER the first gate call fails the gating.
-    calls = [("hf_jobs", {"operation": "run"}), _hf_read(), _hf_read(HF_REF_URI)]
+    calls = [_t("hf_jobs", {"operation": "run"}), _hf_read(), _hf_read(HF_REF_URI)]
     r = evaluate(PLAN_SCENARIO, calls, client_id="codex", final_text=_PLAN_HAPPY_TEXT)
     f = _flat(r)
     assert f["skill_before_plan"] is False
@@ -289,8 +365,8 @@ DRY_RUN_SCENARIO = {
 }
 
 
-def _hf_jobs_call(script: str = "TRL Jobs and $HF_TOKEN secrets:") -> tuple[str, dict]:
-    return ("hf_jobs", {"operation": "uv", "args": {"script": script, "secrets": {"HF_TOKEN": "$HF_TOKEN"}}})
+def _hf_jobs_call(script: str = "TRL Jobs and $HF_TOKEN secrets:") -> tuple[str, str, dict]:
+    return _t("hf_jobs", {"operation": "uv", "args": {"script": script, "secrets": {"HF_TOKEN": "$HF_TOKEN"}}})
 
 
 def test_dry_run_phrases_match_against_call_args():
@@ -340,7 +416,7 @@ def test_discovery_tools_dont_anchor_implicit_gate():
         "required_phrases": [],  # criterion only — no phrase coverage
     }
     calls = [
-        ("list_mcp_resources", {}),  # discovery, before SKILL.md read
+        _t("list_mcp_resources", {}),  # discovery, before SKILL.md read
         _hf_read(),
     ]
     r = evaluate(scenario, calls, client_id="codex", final_text="")
@@ -355,7 +431,7 @@ def test_dry_run_gate_tools_anchor_skill_read_criterion():
     """
     scenario = {**DRY_RUN_SCENARIO, "gate_tools": ["hf_jobs"]}
     calls = [
-        ("todo__todo_write", {"content": "plan it"}),
+        _t("todo__todo_write", {"content": "plan it"}),
         _hf_read(),                  # skill activation comes after the todo
         _hf_jobs_call(),             # actual gate
     ]
@@ -382,7 +458,7 @@ def test_goose_load_skill_with_path_form_credited_as_reference():
     classified as a reference read, not silently ignored.
     """
     scenario = {**DRY_RUN_SCENARIO, "gate_tools": ["hf_jobs"]}
-    path_form = ("load_skill", {"name": "huggingface-llm-trainer/scripts/train_sft_example.py"})
+    path_form = _t("load_skill", {"name": "huggingface-llm-trainer/scripts/train_sft_example.py"})
     calls = [_hf_read(), path_form, _hf_jobs_call()]
     r = evaluate(scenario, calls, client_id="goose", final_text="Job submitted!")
     f = _flat(r)
@@ -390,7 +466,7 @@ def test_goose_load_skill_with_path_form_credited_as_reference():
     assert r["raw"]["reference_reads"] == [1]
     # The path-form load_skill must NOT land in other_calls — it's a
     # legitimate skill-read dispatch for goose.
-    assert all(name != "load_skill" for _, name in r["other_calls"])
+    assert all(name != "load_skill" for _, name in r["other_calls"])  # other_calls stays (idx, name)
 
 
 # ---------------------------------------------------------------------- multi-skill (cross-skill composition)
@@ -408,8 +484,8 @@ MULTI_SCENARIO = {
 }
 
 
-def _trackio_read() -> tuple[str, dict]:
-    return ("read_mcp_resource", {"uri": HF_TRACKIO_URI})
+def _trackio_read() -> tuple[str, str, dict]:
+    return _t("read_mcp_resource", {"uri": HF_TRACKIO_URI})
 
 
 def test_multi_skill_passes_when_both_read_before_gate():
@@ -460,7 +536,7 @@ def test_dry_run_missing_phrase_in_both_haystack_parts_fails():
     # Use a bare hf_jobs call (no secrets dict) so $HF_TOKEN really is
     # absent from both final_text and call args.
     script_with_one = "TRL Jobs only — no token mentioned"
-    bare_call = ("hf_jobs", {"operation": "uv", "args": {"script": script_with_one}})
+    bare_call = _t("hf_jobs", {"operation": "uv", "args": {"script": script_with_one}})
     calls = [_hf_read(), bare_call]
     r = evaluate(DRY_RUN_SCENARIO, calls, client_id="codex", final_text="(empty)")
     f = _flat(r)
@@ -530,8 +606,8 @@ def test_load_scenario_pr_missing_repo_exits(tmp_path: Path):
 
 def test_write_result_json_pr_shape(tmp_path: Path):
     calls = [_read(), _create(),
-             ("add_comment_to_pending_review",
-              {"line": 10, "body": "secret_body_should_be_preserved_in_json"}),
+             _t("add_comment_to_pending_review",
+                {"line": 10, "body": "secret_body_should_be_preserved_in_json"}),
              _submit("APPROVE")]
     result = evaluate(PR_SCENARIO, calls, client_id="codex")
     path = write_result_json(

@@ -112,7 +112,7 @@ def _write_goose_config(
     )
 
 
-def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[str, dict]], str | None]:
+def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[str, str, dict]], str | None]:
     """Walk goose's JSONL stream.
 
     Schema: {"type":"message","message":{"role":"assistant","content":[
@@ -123,9 +123,10 @@ def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[s
 
     Goose prefixes MCP tools with `<server>__`; strip so the evaluator
     matches bare names. Built-ins (read_mcp_resource, load_skill) have
-    no prefix.
+    no prefix. `raw_name` preserves the unstripped form so the server
+    identifier survives in the recorded result.
     """
-    calls: list[tuple[str, dict]] = []
+    calls: list[tuple[str, str, dict]] = []
     final_text: str | None = None
     prefix = f"{alias}__"
     for event in events:
@@ -140,11 +141,12 @@ def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[s
                 if tc.get("status") != "success":
                     continue
                 value = tc.get("value") or {}
-                name = (value.get("name") or "").removeprefix(prefix)
+                raw_name = value.get("name") or ""
+                name = raw_name.removeprefix(prefix)
                 args = value.get("arguments") or {}
                 if not isinstance(args, dict):
                     args = {}
-                calls.append((name, args))
+                calls.append((name, raw_name, args))
             elif it_type == "text" and role == "assistant":
                 text = item.get("text")
                 if isinstance(text, str) and text.strip():

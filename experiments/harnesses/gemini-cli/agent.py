@@ -93,7 +93,7 @@ def _write_gemini_settings(home: Path, *, alias: str, endpoint: str, token: str)
     )
 
 
-def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[str, dict]], str]:
+def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[str, str, dict]], str]:
     """Walk gemini-cli's JSONL events.
 
     Schema:
@@ -103,9 +103,10 @@ def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[s
     gemini-cli prefixes MCP tools as `mcp_<server_id>_<tool>` (see
     packages/core/src/tools/mcp-tool.ts); strip for evaluator matching.
     Built-ins (read_mcp_resource, activate_skill, activate-skill) have
-    no prefix.
+    no prefix. `raw_name` preserves the unstripped form so the server
+    identifier survives in the recorded result.
     """
-    calls: list[tuple[str, dict]] = []
+    calls: list[tuple[str, str, dict]] = []
     response_text = ""
     prefix = f"mcp_{alias}_"
     for event in events:
@@ -117,7 +118,7 @@ def _extract_tool_calls(events: list[dict], *, alias: str) -> tuple[list[tuple[s
             if not isinstance(name, str):
                 continue
             params = event.get("parameters") if isinstance(event.get("parameters"), dict) else {}
-            calls.append((name.removeprefix(prefix), params))
+            calls.append((name.removeprefix(prefix), name, params))
         elif (
             etype == "message"
             and event.get("role") == "assistant"
