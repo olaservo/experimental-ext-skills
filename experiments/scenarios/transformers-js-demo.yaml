@@ -47,8 +47,20 @@ required_phrases:
       - ".dispose()"
       - "dispose("
 
+# fast-agent picks a variant via FAST_AGENT_VARIANT=anthropic|openai|google|openrouter
+# (default: anthropic). The openai/google/openrouter entries are starting
+# points sourced from the user's fast-agent quality benchmark and
+# skilljack-evals CI — tune per scenario if a model fails activation.
 models:
-  fast-agent: anthropic.claude-haiku-4-5-20251001
+  fast-agent:
+    anthropic: anthropic.claude-haiku-4-5-20251001
+    openai:    responses.gpt-5.5
+    google:    google.gemini-3.5-flash
+    # OR alternates (override with FAST_AGENT_MODEL):
+    #   openrouter.minimax/minimax-m2.7   (efficiency winner)
+    #   openrouter.moonshotai/kimi-k2.6   (quality leader)
+    #   openrouter.qwen/qwen3.7-max       (latest Qwen, max tier)
+    openrouter: openrouter.deepseek/deepseek-v4-pro
   gemini-cli: gemini-2.5-flash
   goose: claude-sonnet-4-6
   codex: gpt-5.1-codex-mini

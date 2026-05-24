@@ -49,10 +49,25 @@ their own checkouts instead.
 | `GEMINI_CLI_ROOT` | `experiments/.workspace/gemini-cli` | Clone of `olaservo/gemini-cli@experimental/skills-over-mcp` (only required for the gemini-cli client) |
 | `MCP_SERVER_URL` | `http://localhost:8082/mcp` | Where the github-mcp-server listens (pr-review) |
 | `HF_MCP_SERVER_URL` | `http://localhost:8083/mcp` | Where the hf-mcp-server listens (plan scenarios) |
-| `AGENT_SKILLS_ENV_FILE` | unset | Absolute path to a `.env` containing `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `HF_TOKEN` |
+| `AGENT_SKILLS_ENV_FILE` | unset | Absolute path to a `.env` containing `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `HF_TOKEN` |
 
 Defaults are relative to the WG repo root, so they work as-is when
 Claude Code's CWD is somewhere inside this repo.
+
+The fast-agent harness additionally needs a `fastagent.secrets.yaml`
+next to `agent.py` so the OpenAI / Google / OpenRouter providers pick
+up their API keys (Anthropic gets resolved via the SDK's default
+env-var fallback, but the OpenAI-compatible providers don't). One-time
+setup:
+```bash
+cp experiments/harnesses/fast-agent/fastagent.secrets.yaml.example \
+   experiments/harnesses/fast-agent/fastagent.secrets.yaml
+```
+The template uses `${VAR}` interpolation against `$AGENT_SKILLS_ENV_FILE`,
+so once you've sourced the .env (`set -a && . "$AGENT_SKILLS_ENV_FILE"
+&& set +a`) every variant works without further setup. `GEMINI_API_KEY`
+(already required for the gemini-cli harness) is what fast-agent's
+`google` variant reads — no separate key.
 
 ## Workflow
 
@@ -142,19 +157,67 @@ The examples below use one scenario YAML per client; substitute
 
 **fast-agent** — Python library-embed. Windows: prepend
 `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` so Rich's block-drawing
-characters don't crash the cp1252 console:
+characters don't crash the cp1252 console.
+
+Source the .env once per shell so all provider keys are visible:
+```bash
+set -a && . "$AGENT_SKILLS_ENV_FILE" && set +a
+```
+
+The fast-agent harness exposes four named variants per scenario
+(`FAST_AGENT_VARIANT=<name>`, default `anthropic`). The model behind
+each variant is named in the scenario YAML's `models.fast-agent` map:
+
+| Variant | Model ID | Source |
+| :--- | :--- | :--- |
+| `anthropic` (default) | `anthropic.claude-haiku-4-5-20251001` | Existing baseline — smallest Anthropic tier that reliably activates the skill. |
+| `openai` | `responses.gpt-5.5` | Routes via fast-agent's `responses` provider (OpenAI's `/v1/responses` API) — required for gpt-5.5 with function tools + reasoning_effort; `openai.<model>` (chat completions) returns 400. Exercised in skilljack-evals CI. |
+| `google` | `google.gemini-3.5-flash` | Quality winner in the user's fast-agent benchmark. Fall back to `google.gemini-3-flash` if rejected. |
+| `openrouter` | `openrouter.deepseek/deepseek-v4-pro` | Primary OR candidate from skilljack-evals CI. First fast-agent run is also a smoke test. |
+
+Ad-hoc-only OpenRouter models (set `FAST_AGENT_MODEL=<id>`, no variant
+key needed) — pre-validated by the fast-agent benchmark:
+
+| Model ID | Why it's here |
+| :--- | :--- |
+| `openrouter.minimax/minimax-m2.7` | Efficiency winner in the benchmark (17.64 score/min, 76.5 quality). Best for fast iteration. |
+| `openrouter.moonshotai/kimi-k2.6` | Top OpenRouter quality (77.0); routed via Together. |
+| `openrouter.qwen/qwen3.7-max` | Latest Qwen (max tier, not coder-specialized). Not yet in the benchmark. |
+
+Invocation:
 ```bash
 cd experiments/harnesses/fast-agent
-# pr-review:
-GITHUB_TOKEN=$(gh auth token) ANTHROPIC_API_KEY=... \
+
+# Default Anthropic baseline (current behavior):
+GITHUB_TOKEN=$(gh auth token) \
   uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
-# plan kind:
-HF_TOKEN=hf_xxx ANTHROPIC_API_KEY=... \
+
+# OpenAI variant:
+GITHUB_TOKEN=$(gh auth token) FAST_AGENT_VARIANT=openai \
+  uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
+
+# Google (Gemini) variant:
+GITHUB_TOKEN=$(gh auth token) FAST_AGENT_VARIANT=google \
+  uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
+
+# OpenRouter variant (canonical = deepseek):
+GITHUB_TOKEN=$(gh auth token) FAST_AGENT_VARIANT=openrouter \
+  uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
+
+# Ad-hoc model override (any provider; still works):
+GITHUB_TOKEN=$(gh auth token) FAST_AGENT_MODEL=openrouter.minimax/minimax-m2.7 \
+  uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
+
+# Plan kind (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
+FAST_AGENT_VARIANT=openai \
   uv run agent.py ../../scenarios/hf-jobs-plan.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
 ```
-Override the model with `FAST_AGENT_MODEL=<id>` to probe different
-tiers without editing the scenario YAML.
+
+`FAST_AGENT_MODEL` overrides any variant lookup — useful for the
+ad-hoc menu above, or for probing a model that isn't named in the
+scenario YAML. An unknown variant fails fast with a "no fast-agent.X
+entry" message.
 
 **gemini-cli** — Python subprocess driving a prebuilt bundle. Requires
 `$GEMINI_CLI_ROOT/bundle/gemini.js`:

@@ -62,7 +62,33 @@ CTX = setup_run(SCENARIO)
 os.environ[CTX["token_env_var"]] = CTX["token"]
 
 PROMPT = CTX["prompt"]
-MODEL = os.environ.get("FAST_AGENT_MODEL") or SCENARIO.get("models", {}).get("fast-agent")
+
+
+def _resolve_model_and_variant(scenario: dict) -> tuple[str | None, str | None]:
+    """Pick the model id and variant label from env + scenario YAML.
+
+    `FAST_AGENT_MODEL` is the ad-hoc override and always wins. Otherwise
+    `models.fast-agent` is a map keyed by FAST_AGENT_VARIANT (default
+    `anthropic`); a legacy scalar entry is treated as the only model.
+    """
+    override = os.environ.get("FAST_AGENT_MODEL")
+    entry = scenario.get("models", {}).get("fast-agent")
+    if override:
+        return override, os.environ.get("FAST_AGENT_VARIANT")
+    if isinstance(entry, dict):
+        variant = os.environ.get("FAST_AGENT_VARIANT", "anthropic")
+        if variant not in entry:
+            available = ", ".join(sorted(entry)) or "(none)"
+            sys.exit(
+                f"scenario {scenario.get('id', _SCENARIO_PATH)!r} has no "
+                f"fast-agent.{variant} entry (available: {available}) — "
+                f"add one to the YAML or set FAST_AGENT_MODEL=<id>"
+            )
+        return entry[variant], variant
+    return entry, None
+
+
+MODEL, VARIANT = _resolve_model_and_variant(SCENARIO)
 SERVER_ALIAS = CTX["server_alias"]
 
 fast = FastAgent(f"skills-over-mcp scenario: {SCENARIO['id']}")
@@ -102,6 +128,8 @@ async def main() -> int:
         print(f"Target:  {CTX['repo']} PR #{CTX['pr_number']}")
     print(f"Server:  {SERVER_ALIAS}")
     print(f"Model:   {MODEL}")
+    if VARIANT:
+        print(f"Variant: {VARIANT}")
     print(f"Prompt:  {PROMPT}")
     print()
 

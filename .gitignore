@@ -9,6 +9,9 @@ experiments/harnesses/**/.pytest_cache/
 # fast-agent session history — per-run conversation dumps, runtime state.
 experiments/harnesses/**/.fast-agent/
 
+# fast-agent secrets file (the .example template is committed).
+experiments/harnesses/**/fastagent.secrets.yaml
+
 # Per-scenario run outputs (summarized elsewhere; don't bloat the repo).
 experiments/results/
 
