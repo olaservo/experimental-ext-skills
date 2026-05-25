@@ -11,27 +11,27 @@ lives in a separate `huggingface-trackio` skill — no `skill://`
 cross-references between them. The agent must independently activate
 the second skill from `<available_skills>` catalog visibility.
 
-## Banner — `skill-read-before-plan`
+## Reporting
 
 ```bash
-grep -B 1 -A 14 "skill-read-before-plan" /tmp/verify-run.log
+grep -B 1 -A 40 "Ordered tool calls:" /tmp/verify-run.log
 ```
 
-Criteria to report:
+Report verbatim:
 
-- `skill-read-before-plan` with `read=[...] missed=[...]` for the
-  multi-skill case (both `huggingface-llm-trainer` and
-  `huggingface-trackio` should appear in `read`)
-- `plan-covers-prescriptions` with `missing=[...]` on failure
-- `references-read N` (informational, not pass/fail; goose has been
-  observed following the trail to `huggingface-trackio/references/alerts.md`)
+- The ordered tool-call list — note which `read_skill` / `read_mcp_resource`
+  / `load_skill` targets appear (both `huggingface-llm-trainer` *and*
+  `huggingface-trackio` are expected for full cross-skill composition).
+- Any `hf_jobs` calls and what's in their `script` arg (a `trackio.alert`
+  reference, `$HF_TOKEN`/secrets, etc.).
 - `Wall-clock: ...`
 
 ## Synthesis vs activation
 
 A submitted script can mention `trackio.alert` without the agent
 having read `huggingface-trackio` — strong models can synthesize it
-from training-data familiarity alone. Passing the *content* criterion
-(`plan-covers-prescriptions`) does not imply the *catalog navigation*
-criterion (`skill-read-before-plan`) passed. Both are independent
-signals; report both.
+from training-data familiarity alone. The call list distinguishes
+*catalog activation* (was the second skill actually read?) from
+*content* (did the submitted script use the right API?) — both are
+independent signals worth flagging separately when you describe the
+run.

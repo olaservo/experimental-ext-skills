@@ -29,26 +29,49 @@ def setup_run(scenario: dict) -> dict[str, Any]:
 
     Returns a dict with:
       - kind: "pr-review" | "plan"
-      - token: resolved bearer token string (used directly when the
-        client materializes auth into a config file, e.g. goose)
+      - token: resolved bearer token string, or None for stdio transport
+        (used directly when the client materializes auth into a config
+        file, e.g. goose)
       - token_env_var: "GITHUB_TOKEN" | "HF_TOKEN" — the env-var name
         the client should set in the child process when its config
         takes an env-var *name* rather than a literal token (e.g.
-        codex's `bearer_token_env_var`)
+        codex's `bearer_token_env_var`). None for stdio servers
+        that don't authenticate.
       - server_alias: name to register the MCP server under
-      - server_endpoint: full URL (e.g. http://localhost:8082/mcp)
+      - server_endpoint: full URL (e.g. http://localhost:8082/mcp), or
+        None for stdio servers whose spawn config lives in the client's
+        own config file
       - prompt: final prompt text, PR-substituted for pr-review,
         unchanged for plan
       - repo, pr_number: pr-review only; None for plan
     """
     kind = scenario["kind"]
     server = scenario.get("mcp_server") or {}
-    endpoint = server.get("endpoint")
+    transport = server.get("transport", "http")
     alias = server.get("alias")
-    if not endpoint:
-        sys.exit("Scenario YAML must declare mcp_server.endpoint")
     if not alias:
         sys.exit("Scenario YAML must declare mcp_server.alias")
+    if transport not in ("http", "stdio"):
+        sys.exit(f"Unknown mcp_server.transport {transport!r}; expected 'http' or 'stdio'")
+
+    # Stdio servers have no URL and (currently) no authentication.
+    # The client's own config supplies the spawn command/args.
+    if transport == "stdio":
+        if kind != "plan":
+            sys.exit(
+                f"Stdio transport currently only supports kind='plan' "
+                f"(got kind={kind!r}); pr-review needs a GitHub token + URL."
+            )
+        return {
+            "kind": kind, "token": None, "token_env_var": None,
+            "server_alias": alias, "server_endpoint": None,
+            "repo": None, "pr_number": None,
+            "prompt": scenario["prompt_template"].rstrip(),
+        }
+
+    endpoint = server.get("endpoint")
+    if not endpoint:
+        sys.exit("Scenario YAML must declare mcp_server.endpoint for http transport")
 
     if kind == "pr-review":
         token = resolve_github_token()
@@ -78,34 +101,47 @@ def report_and_save(
     ctx: dict,
     model: str | None,
     calls: list[tuple[str, str, dict]],
-    result: dict,
     final_text: str | None,
     elapsed_s: float,
     timed_out: bool = False,
     error: str | None = None,
+    artifact_path: str | None = None,
+    raw_artifact_path: str | None = None,
+    postprocess_status: str | None = None,
 ) -> None:
     """Render the banner and write the result JSON.
 
     pr-review fetches the review URL via `gh api` and prints it after
     the banner; plan runs omit the URL line and the JSON field
     entirely (no server-side artifact for plan).
+
+    File-output plan scenarios additionally pass `artifact_path` (the
+    postprocessed file) and `raw_artifact_path` (the preserved
+    pre-postprocess copy); both show up in the banner and JSON record.
     """
     common_json = dict(
         client=client, scenario_id=scenario["id"], model=model,
-        result=result, tool_calls=calls,
+        tool_calls=calls,
         elapsed_ms=int(elapsed_s * 1000),
         error=error, final_text=final_text,
+        artifact_path=artifact_path,
+        raw_artifact_path=raw_artifact_path,
+        postprocess_status=postprocess_status,
     )
     if ctx["kind"] == "pr-review":
         review_url = find_review_url(ctx["repo"], ctx["pr_number"])
         render_report(
-            calls=calls, result=result, review_url=review_url,
+            calls=calls, review_url=review_url,
             elapsed_s=elapsed_s, timed_out=timed_out, final_text=final_text,
+            artifact_path=artifact_path, raw_artifact_path=raw_artifact_path,
+            postprocess_status=postprocess_status,
         )
         write_result_json(**common_json, review_url=review_url)
     else:
         render_report(
-            calls=calls, result=result,
+            calls=calls,
             elapsed_s=elapsed_s, timed_out=timed_out, final_text=final_text,
+            artifact_path=artifact_path, raw_artifact_path=raw_artifact_path,
+            postprocess_status=postprocess_status,
         )
         write_result_json(**common_json)

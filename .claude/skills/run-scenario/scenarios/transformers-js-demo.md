@@ -10,31 +10,25 @@ loading mechanism on a code-output skill rather than a tool-call-shape
 skill, and probes whether prominent in-body prescriptions translate
 into the agent's output.
 
-The three graded phrases come from the skill body:
+Three signature phrases from the skill body to look for in the agent's
+final response (printed in full after the banner):
 
 - `@huggingface/transformers` — the v4 package name. Untrained agents
   reach for the older `@xenova/transformers`.
 - `pipeline()` — the API the skill leads with.
 - `dispose()` — memory-management rule the skill flags with a ⚠️ warning.
 
-## Banner — `skill-read-before-plan`
+## Reporting
 
 ```bash
-grep -B 1 -A 14 "skill-read-before-plan" /tmp/verify-run.log
+grep -B 1 -A 40 "Ordered tool calls:" /tmp/verify-run.log
 ```
 
-Criteria to report:
+Report verbatim:
 
-- `skill-read-before-plan` (catalog activation)
-- `plan-covers-prescriptions` with `missing=[...]` on failure — the
-  three phrases above
-- `references-read N` (informational; the skill ships 7 reference files)
+- The ordered tool-call list — note whether `read_skill` /
+  `read_mcp_resource` / `load_skill` targets the `transformers-js`
+  skill, and how many `references/*.md` reads followed.
+- The final assistant response (also in the log) — eyeball the three
+  signature phrases above.
 - `Wall-clock: ...`
-
-## Plan-evaluator neutral tools
-
-Each agentic client's planning step (`todo__todo_write` for goose,
-`list_mcp_resources` for codex) fires before skill activation. The
-plan evaluator has a small per-client "neutral tools" allowlist so
-the `skill-read-before-plan` fallback gate doesn't fire on these.
-The set is empirical (one entry per observed client), not normative.

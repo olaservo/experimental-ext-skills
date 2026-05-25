@@ -13,17 +13,31 @@ Pre-reqs:
   https://github.com/olaservo/goose.git --branch mcp-skills-sep
   --no-default-features --features rustls-tls --locked goose-cli`.
   Or set GOOSE_BIN=/abs/path/goose[.exe].
-- ANTHROPIC_API_KEY (or whichever provider GOOSE_PROVIDER picks).
+- Provider API key for the chosen variant (ANTHROPIC_API_KEY,
+  OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY). Source
+  `$AGENT_SKILLS_ENV_FILE` once per shell.
 - pr-review: GITHUB_TOKEN (or `gh auth token`).
 - plan:      HF_TOKEN.
 - The MCP server the scenario points at, running on its declared port.
 
+Model selection: scenario YAML's `models.goose` is a dict keyed by
+variant (`anthropic` | `openai` | `google` | `openrouter`); pick one
+via GOOSE_VARIANT (default `anthropic`). GOOSE_MODEL is the ad-hoc
+override that wins over both -- pair with GOOSE_PROVIDER when the
+model belongs to a non-default provider.
+
 Usage:
     cd experiments/harnesses/goose
-    GITHUB_TOKEN=$(gh auth token) ANTHROPIC_API_KEY=... \\
+    set -a && . "$AGENT_SKILLS_ENV_FILE" && set +a
+    # Default Anthropic variant:
+    GITHUB_TOKEN=$(gh auth token) \\
         uv run agent.py ../../scenarios/pr-review.yaml
-    HF_TOKEN=hf_xxx ANTHROPIC_API_KEY=... \\
-        uv run agent.py ../../scenarios/hf-jobs-plan.yaml
+    # Google variant:
+    GITHUB_TOKEN=$(gh auth token) GOOSE_VARIANT=google \\
+        uv run agent.py ../../scenarios/pr-review.yaml
+    # Ad-hoc model override:
+    GITHUB_TOKEN=$(gh auth token) GOOSE_PROVIDER=openai GOOSE_MODEL=gpt-5-mini \\
+        uv run agent.py ../../scenarios/pr-review.yaml
 """
 
 # /// script
@@ -49,7 +63,6 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from _common import (  # noqa: E402
-    evaluate,
     load_scenario,
     parse_scenario_arg,
     report_and_save,
@@ -62,6 +75,51 @@ from _common import (  # noqa: E402
 # per run with GOOSE_TIMEOUT_S=<seconds>.
 _DEFAULT_TIMEOUT_S = 600
 _DEFAULT_PROVIDER = "anthropic"
+
+# Variant name -> goose `--provider` value. Mirrors fast-agent's variant
+# names so the cross-client matrix uses the same vocabulary; goose's
+# provider IDs happen to coincide with the variant labels we use today.
+_VARIANT_TO_PROVIDER = {
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "google": "google",
+    "openrouter": "openrouter",
+}
+
+
+def _resolve_model_provider_variant(
+    scenario: dict,
+) -> tuple[str | None, str, str | None]:
+    """Pick model, provider, and variant label from env + scenario YAML.
+
+    GOOSE_MODEL (or legacy GOOSE_E2E_MODEL) is the ad-hoc override and
+    always wins; pair with GOOSE_PROVIDER for non-default providers.
+    Otherwise `models.goose` is a dict keyed by GOOSE_VARIANT (default
+    `anthropic`); the provider is derived from the variant via
+    `_VARIANT_TO_PROVIDER` unless GOOSE_PROVIDER overrides. A legacy
+    scalar entry (single model id) is treated as the only model.
+    """
+    override = os.environ.get("GOOSE_MODEL") or os.environ.get("GOOSE_E2E_MODEL")
+    entry = scenario.get("models", {}).get("goose")
+    if override:
+        provider = os.environ.get("GOOSE_PROVIDER") or _DEFAULT_PROVIDER
+        return override, provider, os.environ.get("GOOSE_VARIANT")
+    if isinstance(entry, dict):
+        variant = os.environ.get("GOOSE_VARIANT", "anthropic")
+        if variant not in entry:
+            available = ", ".join(sorted(entry)) or "(none)"
+            sys.exit(
+                f"scenario {scenario.get('id', '?')!r} has no goose.{variant} "
+                f"entry (available: {available}) -- add one to the YAML or "
+                f"set GOOSE_MODEL=<id>"
+            )
+        provider = (
+            os.environ.get("GOOSE_PROVIDER")
+            or _VARIANT_TO_PROVIDER.get(variant, _DEFAULT_PROVIDER)
+        )
+        return entry[variant], provider, variant
+    provider = os.environ.get("GOOSE_PROVIDER") or _DEFAULT_PROVIDER
+    return entry, provider, None
 
 
 def _resolve_goose_command() -> list[str]:
@@ -229,17 +287,13 @@ def main() -> int:
     scenario = load_scenario(scenario_path)
     ctx = setup_run(scenario)
 
-    model = (
-        os.environ.get("GOOSE_MODEL")
-        or os.environ.get("GOOSE_E2E_MODEL")
-        or scenario.get("models", {}).get("goose")
-    )
+    model, provider, variant = _resolve_model_provider_variant(scenario)
     if not model:
         sys.exit(
-            "No goose model. Scenario YAML should carry `models.goose: <id>`; "
-            "override with GOOSE_MODEL=<id>."
+            "No goose model. Scenario YAML should carry `models.goose` as a "
+            "dict keyed by variant (anthropic|openai|google|openrouter), or "
+            "as a single id. Override with GOOSE_MODEL=<id>."
         )
-    provider = os.environ.get("GOOSE_PROVIDER") or _DEFAULT_PROVIDER
     prompt = ctx["prompt"]
     alias = ctx["server_alias"]
 
@@ -247,7 +301,8 @@ def main() -> int:
     print(f"Kind:    {ctx['kind']}")
     if ctx["kind"] == "pr-review":
         print(f"Target:  {ctx['repo']} PR #{ctx['pr_number']}")
-    print(f"Provider/Model:  {provider} / {model}")
+    variant_suffix = f" (variant={variant})" if variant else ""
+    print(f"Provider/Model:  {provider} / {model}{variant_suffix}")
     print(f"Server:  {alias} -> {ctx['server_endpoint']}")
     print(f"Prompt:  {prompt}")
     print()
@@ -270,6 +325,12 @@ def main() -> int:
             "GOOSE_PATH_ROOT": str(goose_path_root),
             "GOOSE_DISABLE_KEYRING": "1",
         }
+        # Goose's google provider reads GOOGLE_API_KEY; the shared
+        # $AGENT_SKILLS_ENV_FILE only declares GEMINI_API_KEY (the name
+        # fast-agent's google provider expects). Bridge so a single .env
+        # works across both clients.
+        if "GOOGLE_API_KEY" not in env and env.get("GEMINI_API_KEY"):
+            env["GOOGLE_API_KEY"] = env["GEMINI_API_KEY"]
         cmd = [
             *goose_prefix, "run",
             "--text", prompt,
@@ -297,13 +358,12 @@ def main() -> int:
         error = f"goose exit code {rc}"
 
     calls, final_text = _extract_tool_calls(events, alias=alias)
-    result = evaluate(scenario, calls, client_id="goose", final_text=final_text)
     report_and_save(
         client="goose", scenario=scenario, ctx=ctx, model=model,
-        calls=calls, result=result, final_text=final_text,
+        calls=calls, final_text=final_text,
         elapsed_s=elapsed, timed_out=timed_out, error=error,
     )
-    return 0 if result["overall"] else 1
+    return 1 if error else 0
 
 
 if __name__ == "__main__":

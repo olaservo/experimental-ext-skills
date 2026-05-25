@@ -9,23 +9,25 @@ submitted script (the `script` arg of the `hf_jobs` call) is graded
 for prescriptions from the `huggingface-llm-trainer` skill: PEP 723
 metadata, `HF_TOKEN` secret forwarding, Trackio instrumentation.
 
-## Banner — `skill-read-before-plan`
+## Reporting
 
 ```bash
-grep -B 1 -A 14 "skill-read-before-plan" /tmp/verify-run.log
+grep -B 1 -A 40 "Ordered tool calls:" /tmp/verify-run.log
 ```
 
-Criteria to report:
+Report verbatim:
 
-- `skill-read-before-plan`
-- `plan-covers-prescriptions` with `missing=[...]` on failure
-- `references-read N` (informational, not pass/fail)
+- The ordered tool-call list — note whether `read_skill` /
+  `read_mcp_resource` / `load_skill` targets the
+  `huggingface-llm-trainer` skill before any `hf_jobs` call.
+- Any `hf_jobs` calls and what's in their `script` arg (PEP 723
+  `# /// script` block, `$HF_TOKEN` / `secrets:` forwarding, Trackio
+  references).
 - `Wall-clock: ...`
 
-## Goose-specific: gate_tools
+## Goose-specific behavior
 
 Goose's agentic planning interleaves `todo__todo_write` calls with
-skill activation. The scenario YAML's `gate_tools: [hf_jobs]` field
-anchors the *skill-read-before-plan* criterion to the meaningful
-action; without it, housekeeping calls are mistaken for the gate
-and the criterion falsely fails or passes.
+skill activation — expect to see those in the call list. They aren't
+graded; just note them in the report alongside the real activation
+signal.

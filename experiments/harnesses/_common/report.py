@@ -1,8 +1,9 @@
 """Banner printing + results-JSON writing.
 
-The banner labels are emitted by the per-kind evaluator (each criterion
-carries its own greppable string). `run-scenario/SKILL.md` step 4 greps
-for those literals — when adding a new evaluator, keep its labels stable.
+The harness no longer grades runs against per-kind criteria — it just
+records the MCP tool calls the client made. The banner is the ordered
+call list plus a run footer (artifact/review URL/wall-clock); the JSON
+record persists the same tool calls for later inspection.
 """
 
 from __future__ import annotations
@@ -25,11 +26,13 @@ _UNSET = object()
 def render_report(
     *,
     calls: list[tuple[str, str, dict]],
-    result: dict,
     review_url=_UNSET,
     elapsed_s: float,
     timed_out: bool = False,
     final_text: str | None = None,
+    artifact_path: str | None = None,
+    raw_artifact_path: str | None = None,
+    postprocess_status: str | None = None,
     out=sys.stdout,
 ) -> None:
     print(file=out)
@@ -45,28 +48,19 @@ def render_report(
         print(f"  [{i}] {prefix}  {json.dumps(compact, default=str)[:180]}", file=out)
     print(file=out)
 
-    for criterion in result["criteria"]:
-        status = "PASS" if criterion["ok"] else "FAIL"
-        extra = f" ({criterion['note']})" if criterion.get("note") else ""
-        print(f"  {criterion['label']:<32} {status}{extra}", file=out)
-    print(f"  {'overall':<32} {'PASS' if result['overall'] else 'FAIL'}", file=out)
-    # Informational rows: behavioral signals that don't gate `overall`.
-    # Printed after `overall` so grep patterns for the criteria block stay
-    # tight, but still in the banner so the run-scenario report sees them.
-    for info in result.get("info", []):
-        print(f"  {info['label']:<32} {info['value']}", file=out)
-    print(file=out)
-
-    if result.get("other_calls"):
-        print("Tool calls outside prescribed workflow:", file=out)
-        for i, name in result["other_calls"]:
-            print(f"  [{i}] {name}", file=out)
-        print(file=out)
-
     if review_url is not _UNSET:
         # Only PR-review scenarios produce a review URL. Suppressed for
         # plan-only scenarios where there's no server-side artifact.
         print(f"Review URL: {review_url or '(not found via gh api)'}", file=out)
+    if artifact_path:
+        # File-output plan scenarios. `artifact_path` is the
+        # postprocessed (browser-openable) file; `raw_artifact_path` is
+        # the preserved pre-postprocess copy.
+        print(f"Artifact:   {artifact_path}", file=out)
+        if raw_artifact_path:
+            print(f"Raw:        {raw_artifact_path}", file=out)
+        if postprocess_status:
+            print(f"Postprocess: {postprocess_status}", file=out)
     print(f"Wall-clock: {elapsed_s:.1f}s{'  (TIMED OUT)' if timed_out else ''}", file=out)
     print("=" * _BANNER_WIDTH, file=out)
     print(file=out)
@@ -75,32 +69,19 @@ def render_report(
         print(final_text or "(no assistant text captured)", file=out)
 
 
-def _flatten_criteria(result: dict) -> dict:
-    """Flatten the criteria list + raw extras into a single keyed dict for JSON.
-
-    pr-review's historical JSON shape (skill_before_write, comments_ok,
-    create_pending_ok, no_bypass, submit_ok, comment_count,
-    single_shot_indices, verdict) is preserved by this flattening — each
-    criterion contributes `key -> ok` and the evaluator's `raw` contributes
-    extras like `comment_count` and `verdict`. Result-shape consumers can
-    treat the whole flattened dict as the criteria payload.
-    """
-    flat = {c["key"]: c["ok"] for c in result["criteria"]}
-    flat.update(result.get("raw", {}))
-    return flat
-
-
 def write_result_json(
     *,
     client: str,
     scenario_id: str,
     model: str | None,
-    result: dict,
     tool_calls: list[tuple[str, str, dict]],
     review_url=_UNSET,
     elapsed_ms: int,
     error: str | None = None,
     final_text: str | None = None,
+    artifact_path: str | None = None,
+    raw_artifact_path: str | None = None,
+    postprocess_status: str | None = None,
     results_dir: Path | None = None,
 ) -> Path:
     """Write `results/<ISO-UTC>-<scenario>-<client>-<model>.json`.
@@ -117,10 +98,8 @@ def write_result_json(
 
     payload = {
         "client": client,
-        "criteria": _flatten_criteria(result),
         "elapsed_ms": elapsed_ms,
         "model": model,
-        "overall": result["overall"],
         "scenario_id": scenario_id,
         "tool_calls": [
             {"args": dict(args or {}), "name": name, "raw_name": raw_name}
@@ -131,6 +110,12 @@ def write_result_json(
         payload["review_url"] = review_url
     if final_text is not None:
         payload["final_text"] = final_text
+    if artifact_path is not None:
+        payload["artifact_path"] = artifact_path
+    if raw_artifact_path is not None:
+        payload["raw_artifact_path"] = raw_artifact_path
+    if postprocess_status is not None:
+        payload["postprocess_status"] = postprocess_status
     if error is not None:
         payload["error"] = error
 

@@ -23,43 +23,17 @@ prompt_template: >-
   `databricks/databricks-dolly-15k` dataset using Hugging Face Jobs,
   with Trackio alerts that fire on loss spikes during training.
 
-# Both skills must be activated before the gate. The plan evaluator's
-# skill-read-before-plan criterion will report `read=[...] missed=[...]`
-# in the banner note when either is missing.
-expected_skill_uris:
-  - skill://huggingface-llm-trainer/SKILL.md
-  - skill://huggingface-trackio/SKILL.md
-
-gate_tools:
-  - hf_jobs
-
-# Phrases come from BOTH skills:
-# - uv_script and secrets_forwarding are llm-trainer prescriptions
-# - alert_level / trackio.alert come from trackio's references/alerts.md
-#   and prove that skill was actually read deeply, not just activated
-required_phrases:
-  - key: uv_script
-    any_of:
-      - "/// script"
-      - "PEP 723"
-      - "uv script"
-  - key: secrets_forwarding
-    any_of:
-      - "HF_TOKEN"
-      - "$HF_TOKEN"
-      - "${HF_TOKEN}"
-  - key: trackio_alert
-    # `trackio.alert(...)` and AlertLevel are distinctive to the trackio
-    # skill's alerts.md reference — generic ML knowledge wouldn't surface them.
-    any_of:
-      - "trackio.alert"
-      - "AlertLevel"
-      - "alert_level"
-
 # fast-agent picks a variant via FAST_AGENT_VARIANT=anthropic|openai|google|openrouter
 # (default: anthropic). The openai/google/openrouter entries are starting
 # points sourced from the user's fast-agent quality benchmark and
 # skilljack-evals CI — tune per scenario if a model fails activation.
+#
+# goose picks a variant via GOOSE_VARIANT=anthropic|openai|google|openrouter
+# (default: anthropic). Models are bare ids — goose takes provider +
+# model as separate CLI flags, so no `<provider>.` prefix. The `openai`
+# variant auto-detects gpt-5+ models and routes them to /v1/responses
+# transparently (`should_use_responses_api` in openai.rs:269); earlier
+# models go through chat-completions. No Responses fallback needed.
 models:
   fast-agent:
     anthropic: anthropic.claude-haiku-4-5-20251001
@@ -69,6 +43,16 @@ models:
     #   openrouter.minimax/minimax-m2.7   (efficiency winner)
     #   openrouter.moonshotai/kimi-k2.6   (quality leader)
     #   openrouter.qwen/qwen3.7-max       (latest Qwen, max tier)
+    #   openrouter.z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
     openrouter: openrouter.deepseek/deepseek-v4-pro
-  goose: claude-sonnet-4-6
+  goose:
+    anthropic:  claude-sonnet-4-6
+    openai:     gpt-5.5
+    google:     gemini-3.5-flash
+    # OR alternates (override with GOOSE_PROVIDER=openrouter GOOSE_MODEL=...):
+    #   minimax/minimax-m2.7   (efficiency winner)
+    #   moonshotai/kimi-k2.6   (quality leader)
+    #   qwen/qwen3.7-max       (latest Qwen, max tier)
+    #   z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
+    openrouter: deepseek/deepseek-v4-pro
   codex: gpt-5.1-codex-mini

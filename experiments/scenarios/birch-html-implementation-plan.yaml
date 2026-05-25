@@ -1,0 +1,62 @@
+# Scenario #5 — Birch HTML implementation-plan artifact (stdio + file output).
+# See docs/findings/scenarios/birch-html-implementation-plan.md (TBD) for
+# what this probes and why. Unlike #2-#4 the artifact is a saved file the
+# user can open in a browser, not the agent's final assistant response.
+
+id: birch-html-implementation-plan
+kind: plan
+description: >-
+  Agent activates the `birch-html` skill and writes a self-contained
+  HTML implementation-plan artifact that follows the Birch contract
+  (placeholder preserved, required shell, no gradients/network assets).
+  Probes (a) a stdio-transport MCP server (the `birch-html-mcp` wrapper
+  in olaservo/birch-html@add-mcp-server-wrapper) — the first non-HTTP
+  server in the matrix — and (b) end-to-end artifact production: the
+  model writes a real `.html` file in the run's artifact dir, and the
+  harness invokes the skill's `finish_birch_html.py` postprocess so
+  the rendered output is directly browser-openable.
+
+mcp_server:
+  alias: birch_skills
+  # New: tells setup.py to skip the http endpoint+bearer-token plumbing.
+  # The server alias is spawned by fast-agent over stdio per
+  # fastagent.config.yaml; the binary path is exported by agent.py
+  # as BIRCH_MCP_SERVER_DIST so config-level ${VAR} interpolation works.
+  transport: stdio
+
+# Natural request — no "read skills first" hint, no mention of Birch.
+# Implementation-plan is the first artifact type named in the skill's
+# trigger list, and doesn't require synthetic source material.
+prompt_template: >-
+  Make me a single-page HTML implementation plan for adding dark mode
+  to a small static marketing site. Include sections for scope, rollout
+  steps, risks, and verification, and write it as a complete .html file
+  in the current directory.
+
+# Artifact production — the harness uses these to switch from the
+# default tempdir-and-discard mode into "persist + postprocess":
+#   - artifact_glob: pattern the harness greps for in the run dir;
+#     used to locate the file produced by the model
+#   - postprocess.cmd: command run after agent.send returns, with
+#     {artifact} substituted to the located file's absolute path.
+#     cwd is BIRCH_MCP_SERVER_DIR (the skill scripts live under
+#     skill/scripts/ relative to that clone root).
+artifact_glob: "*.html"
+postprocess:
+  cmd: ["uv", "run", "skill/scripts/finish_birch_html.py", "{artifact}"]
+
+# fast-agent picks a variant via FAST_AGENT_VARIANT=anthropic|openai|google|openrouter
+# (default: anthropic). No codex/goose entries — those harnesses
+# currently hard-code mcp_servers.<alias>.url= flags and don't support
+# stdio transport yet.
+models:
+  fast-agent:
+    anthropic:  anthropic.claude-haiku-4-5-20251001
+    openai:     responses.gpt-5.5
+    google:     google.gemini-3.5-flash
+    # OR alternates (override with FAST_AGENT_MODEL):
+    #   openrouter.minimax/minimax-m2.7   (efficiency winner)
+    #   openrouter.moonshotai/kimi-k2.6   (quality leader)
+    #   openrouter.qwen/qwen3.7-max       (latest Qwen, max tier)
+    #   openrouter.z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
+    openrouter: openrouter.deepseek/deepseek-v4-pro

@@ -50,7 +50,6 @@ import psutil
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from _common import (  # noqa: E402
-    evaluate,
     load_scenario,
     parse_scenario_arg,
     report_and_save,
@@ -268,13 +267,12 @@ def main() -> int:
         error = f"codex exit code {rc}"
 
     calls, final_text = _extract_tool_calls(events)
-    result = evaluate(scenario, calls, client_id="codex", final_text=final_text)
     report_and_save(
         client="codex", scenario=scenario, ctx=ctx, model=model,
-        calls=calls, result=result, final_text=final_text,
+        calls=calls, final_text=final_text,
         elapsed_s=elapsed, timed_out=timed_out, error=error,
     )
-    return 0 if result["overall"] else 1
+    return 1 if error else 0
 
 
 if __name__ == "__main__":

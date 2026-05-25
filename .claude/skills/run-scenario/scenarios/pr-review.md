@@ -36,22 +36,19 @@ output before writing comments and trips TPM limits repeatedly within
 180s. (Plan scenarios are usually under 30s and `gpt-5.1-codex-mini`
 works fine there.)
 
-## Banner — `skill-read-before-write`
+## Reporting
 
 ```bash
-grep -B 1 -A 20 "skill-read-before-write" /tmp/verify-run.log
+grep -B 1 -A 40 "Ordered tool calls:" /tmp/verify-run.log
 ```
 
-Five criteria to report:
+Report verbatim:
 
-- `skill-read-before-write`
-- `create-pending-review`
-- `add-comment(s)` with `count=N`
-- `submit-pending-with-verdict` with `verdict=...`
-- `no-single-shot-bypass` with `bypass_indices=[...]` if any
-
-Plus diagnostics common to all scenarios:
-
+- The ordered tool-call list — note whether a skill-read (`read_skill`,
+  `read_mcp_resource`, `load_skill`) appears before any
+  `pull_request_review_write` / `add_comment_to_pending_review` call,
+  and whether the workflow follows the three-step pattern (create →
+  comment(s) → submit_pending with `event` set).
 - `Review URL: ...` line
 - `Wall-clock: ...`
 

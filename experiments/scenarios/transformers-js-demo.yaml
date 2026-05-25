@@ -23,34 +23,17 @@ prompt_template: >-
   to run sentiment analysis on user input from a textarea, with a
   button to trigger inference and a place to render the result.
 
-expected_skill_uri: skill://transformers-js/SKILL.md
-
-# Phrase-grep inputs to plan-covers-prescriptions. All three are
-# distinctive to the transformers-js skill rather than generic JS:
-#   - `@huggingface/transformers` is the package name the skill prescribes
-#     (the non-skill default would be `@xenova/transformers`, the older
-#     pre-4.x package — agents working from stale training data miss this)
-#   - `pipeline` matches the Pipeline API the skill leads with
-#   - `dispose()` enforces the skill's emphasized memory-management rule
-#     (⚠️ "Always dispose when done to free memory")
-required_phrases:
-  - key: package_name
-    any_of:
-      - "@huggingface/transformers"
-  - key: pipeline_api
-    any_of:
-      - "pipeline("
-      - "pipeline ("
-      - "import { pipeline"
-  - key: dispose_rule
-    any_of:
-      - ".dispose()"
-      - "dispose("
-
 # fast-agent picks a variant via FAST_AGENT_VARIANT=anthropic|openai|google|openrouter
 # (default: anthropic). The openai/google/openrouter entries are starting
 # points sourced from the user's fast-agent quality benchmark and
 # skilljack-evals CI — tune per scenario if a model fails activation.
+#
+# goose picks a variant via GOOSE_VARIANT=anthropic|openai|google|openrouter
+# (default: anthropic). Models are bare ids — goose takes provider +
+# model as separate CLI flags, so no `<provider>.` prefix. The `openai`
+# variant auto-detects gpt-5+ models and routes them to /v1/responses
+# transparently (`should_use_responses_api` in openai.rs:269); earlier
+# models go through chat-completions. No Responses fallback needed.
 models:
   fast-agent:
     anthropic: anthropic.claude-haiku-4-5-20251001
@@ -60,6 +43,16 @@ models:
     #   openrouter.minimax/minimax-m2.7   (efficiency winner)
     #   openrouter.moonshotai/kimi-k2.6   (quality leader)
     #   openrouter.qwen/qwen3.7-max       (latest Qwen, max tier)
+    #   openrouter.z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
     openrouter: openrouter.deepseek/deepseek-v4-pro
-  goose: claude-sonnet-4-6
+  goose:
+    anthropic:  claude-sonnet-4-6
+    openai:     gpt-5.5
+    google:     gemini-3.5-flash
+    # OR alternates (override with GOOSE_PROVIDER=openrouter GOOSE_MODEL=...):
+    #   minimax/minimax-m2.7   (efficiency winner)
+    #   moonshotai/kimi-k2.6   (quality leader)
+    #   qwen/qwen3.7-max       (latest Qwen, max tier)
+    #   z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
+    openrouter: deepseek/deepseek-v4-pro
   codex: gpt-5.1-codex-mini

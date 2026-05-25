@@ -28,16 +28,19 @@ block-drawing characters don't crash the cp1252 console.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from _common import (  # noqa: E402
-    evaluate,
     load_scenario,
     parse_scenario_arg,
     report_and_save,
@@ -46,6 +49,22 @@ from _common import (  # noqa: E402
 
 from fast_agent import FastAgent  # noqa: E402
 
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Birch-html stdio MCP server path. fastagent.config.yaml's birch_skills
+# entry uses `args: ["${BIRCH_MCP_SERVER_DIST}"]`, so the absolute path
+# has to be in the env BEFORE fast-agent loads the config (which happens
+# at FastAgent() construction below). Exported unconditionally — it
+# has no effect on scenarios that don't reference birch_skills.
+_BIRCH_DIR = Path(
+    os.environ.get("BIRCH_MCP_SERVER_DIR")
+    or (_REPO_ROOT / "experiments" / ".workspace" / "birch-html")
+).resolve()
+os.environ.setdefault(
+    "BIRCH_MCP_SERVER_DIST",
+    str(_BIRCH_DIR / "mcp-server" / "dist" / "server.js"),
+)
 
 # fast-agent resolves `fastagent.config.yaml` at import; the @fast.agent
 # decorator needs scenario values at module-import time. So this runs
@@ -58,8 +77,9 @@ CTX = setup_run(SCENARIO)
 # expected env-var name ("GITHUB_TOKEN" for github_skills, "HF_TOKEN"
 # for hf_skills) — `Authorization: "Bearer ${VAR}"`. setup_run resolves
 # the token; we only need to make it visible to fast-agent under the
-# right name.
-os.environ[CTX["token_env_var"]] = CTX["token"]
+# right name. Stdio servers (no auth) pass token_env_var=None.
+if CTX["token_env_var"]:
+    os.environ[CTX["token_env_var"]] = CTX["token"]
 
 PROMPT = CTX["prompt"]
 
@@ -92,6 +112,91 @@ MODEL, VARIANT = _resolve_model_and_variant(SCENARIO)
 SERVER_ALIAS = CTX["server_alias"]
 
 fast = FastAgent(f"skills-over-mcp scenario: {SCENARIO['id']}")
+
+
+@contextmanager
+def _run_workspace(scenario: dict):
+    """Yield the cwd the agent should run under.
+
+    For artifact-producing scenarios (those declaring `artifact_glob`)
+    this is a *persistent* per-run dir under
+    `experiments/.workspace/artifacts/<scenario_id>/<UTC-ts>/` — the
+    model's file writes survive the run so the user can open them.
+
+    For every other scenario it's a hermetic tempdir that gets wiped
+    on exit, matching the existing behavior that keeps the harness
+    dirs clean.
+    """
+    if scenario.get("artifact_glob"):
+        ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_dir = (
+            _REPO_ROOT
+            / "experiments"
+            / ".workspace"
+            / "artifacts"
+            / scenario["id"]
+            / ts
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        yield run_dir
+    else:
+        with tempfile.TemporaryDirectory(
+            prefix="skills-e2e-fast-agent-",
+            ignore_cleanup_errors=True,
+        ) as tmp:
+            yield Path(tmp)
+
+
+def _locate_artifact(run_dir: Path, glob: str) -> Path | None:
+    """Return the most-recently-modified file matching `glob` under `run_dir`.
+
+    Single-artifact assumption: file-output scenarios prompt for one
+    document. If the model wrote multiple (e.g. a stray template),
+    pick the newest — that's the one it intended as the final.
+    """
+    matches = sorted(
+        run_dir.glob(glob),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return matches[0] if matches else None
+
+
+def _run_postprocess(
+    cmd_template: list[str],
+    artifact: Path,
+    cwd: Path,
+) -> tuple[str, str]:
+    """Run the scenario's postprocess command. Returns (status, detail).
+
+    `status` is one of: 'ok', 'failed', 'crashed'. `detail` is a short
+    diagnostic suitable for the banner (exit code or exception type).
+    Failures are not fatal — the raw artifact still grades; only the
+    rendered output is missing.
+    """
+    cmd = [arg.format(artifact=str(artifact)) for arg in cmd_template]
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+    except FileNotFoundError as exc:
+        return "crashed", f"FileNotFoundError: {exc}"
+    except subprocess.TimeoutExpired:
+        return "crashed", "timeout after 60s"
+    except Exception as exc:  # noqa: BLE001
+        return "crashed", f"{type(exc).__name__}: {exc}"
+
+    if proc.returncode == 0:
+        return "ok", "exit=0"
+    tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-1:]
+    snippet = tail[0] if tail else ""
+    return "failed", f"exit={proc.returncode}: {snippet}"[:140]
 
 
 def _extract_tool_calls(agent) -> list[tuple[str, str, dict]]:
@@ -138,14 +243,18 @@ async def main() -> int:
     calls: list[tuple[str, dict]] = []
     error: str | None = None
     elapsed = 0.0
+    run_dir: Path | None = None
     # fast-agent runs in-process, so its tools (write_text_file etc.)
-    # resolve relative paths to *this* Python process's CWD. Drop into
-    # a tempdir so any write lands there and is discarded when the
-    # harness exits. fastagent.config.yaml is resolved at import time,
-    # before this chdir, so config lookup is unaffected.
+    # resolve relative paths to *this* Python process's CWD. For most
+    # scenarios this is a hermetic tempdir that gets wiped on exit; for
+    # file-output scenarios (`artifact_glob` set) we use a persistent
+    # per-run dir under `.workspace/artifacts/` so the model's writes
+    # survive. fastagent.config.yaml is resolved at import time, before
+    # this chdir, so config lookup is unaffected.
     prev_cwd = os.getcwd()
-    with tempfile.TemporaryDirectory(prefix="skills-e2e-fast-agent-", ignore_cleanup_errors=True) as tmp:
-        os.chdir(tmp)
+    with _run_workspace(SCENARIO) as workdir:
+        run_dir = workdir
+        os.chdir(workdir)
         try:
             async with fast.run() as agent:
                 start = time.monotonic()
@@ -164,13 +273,49 @@ async def main() -> int:
 
     final_text = response if isinstance(response, str) else str(response) if response else None
 
-    result = evaluate(SCENARIO, calls, client_id="fast-agent", final_text=final_text)
+    # Artifact handling for file-output scenarios. Phrase-grep should
+    # target the RAW output (model's exact bytes) since postprocess
+    # mutates the placeholder away. Order: locate → copy raw aside →
+    # run postprocess in place → grade against the raw copy.
+    artifact_path: Path | None = None
+    raw_artifact_path: Path | None = None
+    postprocess_status: str | None = None
+    if SCENARIO.get("artifact_glob") and run_dir is not None:
+        artifact_path = _locate_artifact(run_dir, SCENARIO["artifact_glob"])
+        if artifact_path is not None:
+            raw_artifact_path = artifact_path.with_name(
+                f"{artifact_path.stem}.raw{artifact_path.suffix}"
+            )
+            try:
+                shutil.copy2(artifact_path, raw_artifact_path)
+            except OSError as exc:
+                print(f"[raw-copy failed] {exc}", file=sys.stderr)
+                raw_artifact_path = None
+
+            postprocess = SCENARIO.get("postprocess") or {}
+            cmd_template = postprocess.get("cmd")
+            if cmd_template:
+                status, detail = _run_postprocess(
+                    cmd_template, artifact_path, cwd=_BIRCH_DIR,
+                )
+                postprocess_status = detail
+                print(f"[postprocess] {status}: {detail}", file=sys.stderr)
+        else:
+            print(
+                f"[artifact] no file matched {SCENARIO['artifact_glob']!r} "
+                f"under {run_dir}",
+                file=sys.stderr,
+            )
+
     report_and_save(
         client="fast-agent", scenario=SCENARIO, ctx=CTX, model=MODEL,
-        calls=calls, result=result, final_text=final_text,
+        calls=calls, final_text=final_text,
         elapsed_s=elapsed, error=error,
+        artifact_path=str(artifact_path) if artifact_path else None,
+        raw_artifact_path=str(raw_artifact_path) if raw_artifact_path else None,
+        postprocess_status=postprocess_status,
     )
-    return 0 if result["overall"] else 1
+    return 1 if error else 0
 
 
 if __name__ == "__main__":

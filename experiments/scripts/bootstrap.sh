@@ -24,6 +24,7 @@ Usage: $(basename "$0")
 Clones (or fast-forwards) into $WORKSPACE_DIR:
   - olaservo/code-review-subject       subject repo + scaffold script
   - olaservo/github-mcp-server         add-agent-skills branch; builds binary
+  - olaservo/birch-html                add-mcp-server-wrapper branch; builds stdio MCP wrapper
 USAGE
       exit 0
       ;;
@@ -73,6 +74,22 @@ else
   echo "==> WARNING: go not on PATH; install Go to build the server binary." >&2
 fi
 
+clone_or_pull \
+  https://github.com/olaservo/birch-html.git \
+  add-mcp-server-wrapper \
+  "$WORKSPACE_DIR/birch-html"
+
+if command -v npm >/dev/null 2>&1; then
+  echo "==> Building birch-html-mcp wrapper..."
+  (
+    cd "$WORKSPACE_DIR/birch-html/mcp-server"
+    npm install
+    npm run build
+  )
+else
+  echo "==> WARNING: npm not on PATH; install Node.js to build the birch-html-mcp wrapper." >&2
+fi
+
 cat <<DONE
 
 Done. The harnesses default to these locations, so no env vars are
@@ -81,6 +98,7 @@ or to point at sibling clones instead, export:
 
   export SUBJECT_REPO_DIR=$WORKSPACE_DIR/code-review-subject
   export MCP_SERVER_DIR=$WORKSPACE_DIR/github-mcp-server
+  export BIRCH_MCP_SERVER_DIR=$WORKSPACE_DIR/birch-html
 
 Codex and goose: cargo install --git per SKILL.md.
 DONE

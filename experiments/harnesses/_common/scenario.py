@@ -9,8 +9,6 @@ import yaml
 
 # Fields every scenario must declare regardless of kind.
 _BASE_REQUIRED = ("id", "kind", "prompt_template")
-# Either of these must be present (single or multi-skill).
-_SKILL_URI_FIELDS = ("expected_skill_uri", "expected_skill_uris")
 
 # Fields required by specific scenario kinds, in addition to the base set.
 _PER_KIND_REQUIRED: dict[str, tuple[str, ...]] = {
@@ -30,11 +28,6 @@ def load_scenario(path: Path) -> dict:
     missing = [f for f in _BASE_REQUIRED if not data.get(f)]
     if missing:
         sys.exit(f"Scenario YAML at {path} is missing required fields: {', '.join(missing)}")
-    if not any(data.get(f) for f in _SKILL_URI_FIELDS):
-        sys.exit(
-            f"Scenario YAML at {path} must declare one of: "
-            f"{', '.join(_SKILL_URI_FIELDS)}"
-        )
 
     kind = data["kind"]
     if kind not in _PER_KIND_REQUIRED:

@@ -40,3 +40,16 @@ mcp:
       # so the only signal is `<available_skills>`.
       include_instructions: false
       skills_auto_approve: true
+
+    birch_skills:
+      # Stdio transport — no transport: line; fast-agent infers stdio
+      # from the presence of `command`. The wrapper lives in
+      # olaservo/birch-html@add-mcp-server-wrapper; bootstrap.sh builds
+      # mcp-server/dist/server.js into experiments/.workspace/birch-html/.
+      # agent.py exports BIRCH_MCP_SERVER_DIST at module scope so this
+      # ${VAR} resolves to an absolute path regardless of harness CWD.
+      command: node
+      args: ["${BIRCH_MCP_SERVER_DIST}"]
+      # Same contamination controls as github_skills / hf_skills.
+      include_instructions: false
+      skills_auto_approve: true
