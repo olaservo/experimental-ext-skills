@@ -52,6 +52,18 @@ Report verbatim:
 - `Review URL: ...` line
 - `Wall-clock: ...`
 
+### Behavioral patterns to expect (not failures)
+
+- **Double `submit_pending`** (e.g. `event=REQUEST_CHANGES` then
+  `event=COMMENT`). GitHub rejects `REQUEST_CHANGES` from the PR
+  author with `422 Unprocessable Entity`; well-behaved agents catch
+  the failure and resubmit as `COMMENT`. Observed across fast-agent,
+  goose, and codex against the olaservo/code-review-subject PR (the
+  scaffolded PR is opened by the same user that runs the harness).
+  The old grading rubric flagged this as a `no-single-shot-bypass`
+  failure; the simplified harness just records both calls so the
+  reader sees the fallback for what it is.
+
 ## Concurrency
 
 Two clients running pr-review concurrently corrupts the URL report —

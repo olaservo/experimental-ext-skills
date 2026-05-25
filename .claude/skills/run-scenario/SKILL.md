@@ -403,6 +403,18 @@ under `tool_calls`.
   filling `C:`), set `CODEX_BIN=/abs/path/codex.exe` — `which` only
   checks PATH.
 
+  **PATH-shadowing trap.** If an upstream codex (e.g. npm
+  `@openai/codex` at `~/AppData/Roaming/npm/codex` on Windows) appears
+  on PATH ahead of the cargo build, `shutil.which("codex")` resolves
+  to the upstream binary — which doesn't have the skills-over-mcp
+  resource-read primitive. The run looks superficially fine (the
+  harness exits, the JSON has tool_calls), but the call list never
+  contains a `read_mcp_resource` / `read_skill` / `load_skill` and the
+  agent typically times out chasing files via the github-mcp instead
+  of activating the skill. Always set `CODEX_BIN` explicitly when
+  another `codex` might be on PATH; `codex --version` of the fork
+  reports `codex-cli 0.0.0`.
+
 - **Goose binary**: install via `cargo install --git
   https://github.com/olaservo/goose.git --branch mcp-skills-sep
   --no-default-features --features rustls-tls --locked goose-cli`.
