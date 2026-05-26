@@ -4,7 +4,6 @@
 # user can open in a browser, not the agent's final assistant response.
 
 id: birch-html-implementation-plan
-kind: plan
 description: >-
   Agent activates the `birch-html` skill and writes a self-contained
   HTML implementation-plan artifact that follows the Birch contract

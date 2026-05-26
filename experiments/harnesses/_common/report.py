@@ -1,6 +1,6 @@
 """Banner printing + results-JSON writing.
 
-The harness no longer grades runs against per-kind criteria — it just
+The harness no longer grades runs against acceptance criteria — it just
 records the MCP tool calls the client made. The banner is the ordered
 call list plus a run footer (artifact/review URL/wall-clock); the JSON
 record persists the same tool calls for later inspection.

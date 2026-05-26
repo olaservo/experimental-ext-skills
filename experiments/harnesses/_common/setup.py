@@ -1,10 +1,15 @@
-"""Per-kind run setup + uniform report wrapper for client harnesses.
+"""Scenario setup + uniform report wrapper for client harnesses.
 
 `setup_run` resolves everything a client harness needs to wire up its
 subprocess (token, server config, prompt). `report_and_save` is the
-banner + JSON write at the end. Each handles the pr-review/plan kind
-split so individual client agents stay short and don't repeat the
-dispatch.
+banner + JSON write at the end. Behavior is dispatched structurally:
+
+  - Token type is inferred from `mcp_server.alias` (github_* / hf_*),
+    or skipped entirely for `transport: stdio`.
+  - PR-style setup (resolve PR number, scaffold the branch, substitute
+    {pr_number}/{repo} in the prompt) triggers when the scenario
+    declares a `scaffolding_script`; everything else uses the prompt
+    template verbatim.
 
 Client harnesses still own the parts that differ per binary:
   - resolving / spawning the binary (codex / goose)
@@ -24,11 +29,30 @@ from _common.report import render_report, write_result_json
 from _common.tokens import resolve_github_token, resolve_hf_token
 
 
+def _resolve_auth(alias: str) -> tuple[str | None, str | None]:
+    """Pick the bearer token + env-var name for an MCP server alias.
+
+    The alias prefix encodes which backend the server talks to:
+    `github_*` aliases get a GitHub PAT (e.g. `gh auth token`),
+    `hf_*` aliases get `$HF_TOKEN`. Anything else exits with a clear
+    error — add a branch here when introducing a new server family.
+    """
+    prefix = alias.split("_", 1)[0]
+    if prefix == "github":
+        return resolve_github_token(), "GITHUB_TOKEN"
+    if prefix == "hf":
+        return resolve_hf_token(), "HF_TOKEN"
+    sys.exit(
+        f"Cannot resolve auth for alias {alias!r}; expected a prefix of "
+        f"'github_' or 'hf_'. Add a branch to _resolve_auth() if you're "
+        f"wiring a new server family."
+    )
+
+
 def setup_run(scenario: dict) -> dict[str, Any]:
-    """Resolve token, server config, prompt, and (for pr-review) PR state.
+    """Resolve token, server config, prompt, and (when scaffolding) PR state.
 
     Returns a dict with:
-      - kind: "pr-review" | "plan"
       - token: resolved bearer token string, or None for stdio transport
         (used directly when the client materializes auth into a config
         file, e.g. goose)
@@ -41,11 +65,12 @@ def setup_run(scenario: dict) -> dict[str, Any]:
       - server_endpoint: full URL (e.g. http://localhost:8082/mcp), or
         None for stdio servers whose spawn config lives in the client's
         own config file
-      - prompt: final prompt text, PR-substituted for pr-review,
-        unchanged for plan
-      - repo, pr_number: pr-review only; None for plan
+      - prompt: final prompt text, PR-substituted when scaffolding,
+        unchanged otherwise
+      - repo, pr_number: set when scaffolding_script ran; None otherwise.
+        `pr_number is not None` is the structural flag downstream code
+        uses to print the PR target line and fetch a review URL.
     """
-    kind = scenario["kind"]
     server = scenario.get("mcp_server") or {}
     transport = server.get("transport", "http")
     alias = server.get("alias")
@@ -54,16 +79,19 @@ def setup_run(scenario: dict) -> dict[str, Any]:
     if transport not in ("http", "stdio"):
         sys.exit(f"Unknown mcp_server.transport {transport!r}; expected 'http' or 'stdio'")
 
+    needs_scaffolding = bool(scenario.get("scaffolding_script"))
+
     # Stdio servers have no URL and (currently) no authentication.
     # The client's own config supplies the spawn command/args.
     if transport == "stdio":
-        if kind != "plan":
+        if needs_scaffolding:
             sys.exit(
-                f"Stdio transport currently only supports kind='plan' "
-                f"(got kind={kind!r}); pr-review needs a GitHub token + URL."
+                "scaffolding_script is incompatible with stdio transport "
+                "(scaffolding talks to GitHub over HTTP; stdio servers have "
+                "no PR concept)."
             )
         return {
-            "kind": kind, "token": None, "token_env_var": None,
+            "token": None, "token_env_var": None,
             "server_alias": alias, "server_endpoint": None,
             "repo": None, "pr_number": None,
             "prompt": scenario["prompt_template"].rstrip(),
@@ -73,25 +101,24 @@ def setup_run(scenario: dict) -> dict[str, Any]:
     if not endpoint:
         sys.exit("Scenario YAML must declare mcp_server.endpoint for http transport")
 
-    if kind == "pr-review":
-        token = resolve_github_token()
+    token, token_env_var = _resolve_auth(alias)
+
+    if needs_scaffolding:
         repo = os.environ.get("REPO", scenario["repo"])
         pr_number = resolve_pr_number(repo, scenario["head_branch"], scenario["scaffolding_script"])
         prompt = scenario["prompt_template"].format(pr_number=pr_number, repo=repo).rstrip()
         return {
-            "kind": kind, "token": token, "token_env_var": "GITHUB_TOKEN",
+            "token": token, "token_env_var": token_env_var,
             "server_alias": alias, "server_endpoint": endpoint,
             "repo": repo, "pr_number": pr_number, "prompt": prompt,
         }
-    if kind == "plan":
-        token = resolve_hf_token()
-        return {
-            "kind": kind, "token": token, "token_env_var": "HF_TOKEN",
-            "server_alias": alias, "server_endpoint": endpoint,
-            "repo": None, "pr_number": None,
-            "prompt": scenario["prompt_template"].rstrip(),
-        }
-    sys.exit(f"Unsupported scenario kind for client harnesses: {kind!r}")
+
+    return {
+        "token": token, "token_env_var": token_env_var,
+        "server_alias": alias, "server_endpoint": endpoint,
+        "repo": None, "pr_number": None,
+        "prompt": scenario["prompt_template"].rstrip(),
+    }
 
 
 def report_and_save(
@@ -111,11 +138,11 @@ def report_and_save(
 ) -> None:
     """Render the banner and write the result JSON.
 
-    pr-review fetches the review URL via `gh api` and prints it after
-    the banner; plan runs omit the URL line and the JSON field
-    entirely (no server-side artifact for plan).
+    Scenarios that scaffolded a PR (ctx['pr_number'] is set) fetch the
+    review URL via `gh api` and print it after the banner; everything
+    else omits the URL line and the JSON field entirely.
 
-    File-output plan scenarios additionally pass `artifact_path` (the
+    File-output scenarios additionally pass `artifact_path` (the
     postprocessed file) and `raw_artifact_path` (the preserved
     pre-postprocess copy); both show up in the banner and JSON record.
     """
@@ -128,7 +155,7 @@ def report_and_save(
         raw_artifact_path=raw_artifact_path,
         postprocess_status=postprocess_status,
     )
-    if ctx["kind"] == "pr-review":
+    if ctx.get("pr_number") is not None:
         review_url = find_review_url(ctx["repo"], ctx["pr_number"])
         render_report(
             calls=calls, review_url=review_url,

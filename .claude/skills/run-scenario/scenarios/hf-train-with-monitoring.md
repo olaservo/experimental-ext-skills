@@ -1,6 +1,6 @@
 # Scenario: hf-train-with-monitoring
 
-**Kind:** `plan` · **Server:** hf-mcp-server :8083 (with `HF_JOBS_DRY_RUN=true`) · **YAML:** [`experiments/scenarios/hf-train-with-monitoring.yaml`](../../../../experiments/scenarios/hf-train-with-monitoring.yaml)
+**Server:** hf-mcp-server :8083 (with `HF_JOBS_DRY_RUN=true`) · **YAML:** [`experiments/scenarios/hf-train-with-monitoring.yaml`](../../../../experiments/scenarios/hf-train-with-monitoring.yaml)
 
 Cross-skill composition probe. Prompt: *"Fine-tune
 `meta-llama/Llama-3.2-1B-Instruct` on `databricks/databricks-dolly-15k`

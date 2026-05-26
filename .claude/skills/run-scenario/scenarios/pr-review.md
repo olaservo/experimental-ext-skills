@@ -1,6 +1,6 @@
 # Scenario: pr-review
 
-**Kind:** `pr-review` · **Server:** github-mcp-server :8082 · **YAML:** [`experiments/scenarios/pr-review.yaml`](../../../../experiments/scenarios/pr-review.yaml)
+**Server:** github-mcp-server :8082 · **Scaffolds a PR before running** · **YAML:** [`experiments/scenarios/pr-review.yaml`](../../../../experiments/scenarios/pr-review.yaml)
 
 PR-review prompt run against `github-mcp-server` serving the
 `pull-requests` skill as `skill://pull-requests/SKILL.md`. Probes

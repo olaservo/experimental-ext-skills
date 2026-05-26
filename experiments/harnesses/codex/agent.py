@@ -1,9 +1,8 @@
-"""Generic scenario runner for codex — dispatches by scenario kind.
+"""Generic scenario runner for codex.
 
 Drives `codex exec --json` and parses its JSONL event stream. Server
 endpoint, alias, and the auth-token env-var name come from the
-scenario YAML via `setup_run`. Pass criteria live in
-`_common/evaluators/`.
+scenario YAML via `setup_run`.
 
 SECURITY -- do not point at untrusted repos / endpoints (see
 fast-agent/agent.py).
@@ -13,8 +12,8 @@ Pre-reqs:
   https://github.com/olaservo/codex.git --branch skills-over-mcp
   --locked codex-cli`. Upstream npm `@openai/codex` lacks the fork
   changes and will silently misbehave. Or set CODEX_BIN=/abs/path/codex.exe.
-- pr-review: GITHUB_TOKEN (or `gh auth token`).
-- plan:      HF_TOKEN.
+- Token for the scenario's server: GITHUB_TOKEN for github_* aliases,
+  HF_TOKEN for hf_* aliases. Picked up via `--env-file`.
 - OPENAI_API_KEY (mirrored to CODEX_API_KEY to force API-key auth
   over any cached ChatGPT session). Easiest:
   `uv run --env-file <.env> agent.py ...`.
@@ -210,8 +209,7 @@ def main() -> int:
         prompt = f"{prompt}\n\n{prompt_suffix.strip()}"
 
     print(f"Scenario: {scenario_path}")
-    print(f"Kind:    {ctx['kind']}")
-    if ctx["kind"] == "pr-review":
+    if ctx["pr_number"] is not None:
         print(f"Target:  {ctx['repo']} PR #{ctx['pr_number']}")
     print(f"Model:   {model}")
     print(f"Server:  {ctx['server_alias']} -> {ctx['server_endpoint']}")

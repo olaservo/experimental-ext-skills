@@ -3,7 +3,6 @@
 # probes and why. Read-only — no hf_jobs / DRY_RUN dependency.
 
 id: transformers-js-demo
-kind: plan
 description: >-
   Agent activates the `transformers-js` skill and produces a
   self-contained browser HTML/JS file using the @huggingface/transformers

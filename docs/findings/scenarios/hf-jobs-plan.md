@@ -6,7 +6,7 @@
 
 ## What this probes
 
-Plan-kind output. The skill teaches the agent to produce a structured
+Structured submission output. The skill teaches the agent to produce a structured
 *plan* — a PEP 723 UV script with `HF_TOKEN` secret forwarding and
 Trackio instrumentation — rather than free-form code or chat. Tests
 whether skill conventions can shape output format reliably across

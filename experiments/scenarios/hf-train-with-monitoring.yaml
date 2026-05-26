@@ -3,7 +3,6 @@
 # probes and why. Pre-req: HF MCP server with HF_JOBS_DRY_RUN=true.
 
 id: hf-train-with-monitoring
-kind: plan
 description: >-
   Tests cross-skill composition. The agent should activate both
   `huggingface-llm-trainer` (for HF Jobs structure) and

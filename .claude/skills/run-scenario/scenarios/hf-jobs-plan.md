@@ -1,6 +1,6 @@
 # Scenario: hf-jobs-plan
 
-**Kind:** `plan` · **Server:** hf-mcp-server :8083 (with `HF_JOBS_DRY_RUN=true`) · **YAML:** [`experiments/scenarios/hf-jobs-plan.yaml`](../../../../experiments/scenarios/hf-jobs-plan.yaml)
+**Server:** hf-mcp-server :8083 (with `HF_JOBS_DRY_RUN=true`) · **YAML:** [`experiments/scenarios/hf-jobs-plan.yaml`](../../../../experiments/scenarios/hf-jobs-plan.yaml)
 
 A real HF Jobs training prompt — *"Fine-tune
 `meta-llama/Llama-3.2-1B-Instruct` on `databricks/databricks-dolly-15k`

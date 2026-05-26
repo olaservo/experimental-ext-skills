@@ -4,7 +4,6 @@
 # are intercepted server-side and no compute is spent.
 
 id: hf-jobs-plan
-kind: plan
 description: >-
   Agent activates the huggingface-llm-trainer skill bundled with
   olaservo/hf-mcp-server (branch `skills-over-mcp-experiment`) and

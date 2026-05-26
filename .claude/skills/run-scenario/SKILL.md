@@ -1,6 +1,6 @@
 ---
 name: run-scenario
-description: Run a Skills-over-MCP cross-client scenario end-to-end against the right MCP server, execute the named client's harness, and report the criteria banner. Branches on scenario kind — `pr-review` runs against `github-mcp-server` and scaffolds a fresh PR; `plan` scenarios (hf-jobs-plan, hf-train-with-monitoring, transformers-js-demo) run against `hf-mcp-server` with `HF_JOBS_DRY_RUN=true`; `birch-html-implementation-plan` runs against the stdio `birch-html-mcp` wrapper and produces a real HTML file. Use when asked to run a scenario, reproduce Scenarios #1–#5, or test a client (fast-agent, codex, goose).
+description: Run a Skills-over-MCP cross-client scenario end-to-end against the right MCP server, execute the named client's harness, and report the criteria banner. The scenario YAML names the MCP server endpoint; harness behavior follows from structural signals (alias prefix picks the auth token; `scaffolding_script` triggers fresh-PR setup). `pr-review` is the only state-mutating scenario (scaffolds a PR on github-mcp-server); `repo-skills-discovery` is read-only against the same github-mcp-server exercising PR #2428's per-repo resource template; hf-jobs-plan / hf-train-with-monitoring / transformers-js-demo run against hf-mcp-server with `HF_JOBS_DRY_RUN=true`; `birch-html-implementation-plan` runs against the stdio `birch-html-mcp` wrapper and produces a real HTML file. Use when asked to run a scenario, reproduce Scenarios #1–#6, or test a client (fast-agent, codex, goose).
 ---
 
 # run-scenario
@@ -42,18 +42,19 @@ question only if the user named all three in the same turn.
 
 ## Scenarios
 
-The scenario's `kind` field decides which MCP server to talk to and
-whether the scaffold step runs. After preflight, **read the matching
-sub-page below** for scenario-specific scaffold/banner/notes — sub-pages
-are loaded on demand only.
+The scenario YAML names the MCP server and (when it declares a
+`scaffolding_script`) the PR scaffolding step. After preflight, **read
+the matching sub-page below** for scenario-specific scaffold/banner/notes
+— sub-pages are loaded on demand only.
 
-| Scenario | Kind | Server | Sub-page | Probe |
-| :--- | :--- | :--- | :--- | :--- |
-| `pr-review` | `pr-review` | github-mcp-server :8082 | [scenarios/pr-review.md](scenarios/pr-review.md) | Skill-access primitives across host wrappers |
-| `hf-jobs-plan` | `plan` | hf-mcp-server :8083 | [scenarios/hf-jobs-plan.md](scenarios/hf-jobs-plan.md) | Plan-kind output (PEP 723 + Trackio) under dry-run |
-| `hf-train-with-monitoring` | `plan` | hf-mcp-server :8083 | [scenarios/hf-train-with-monitoring.md](scenarios/hf-train-with-monitoring.md) | Cross-skill composition via catalog visibility |
-| `transformers-js-demo` | `plan` | hf-mcp-server :8083 | [scenarios/transformers-js-demo.md](scenarios/transformers-js-demo.md) | Code-output skill (HTML/JS, no execution) |
-| `birch-html-implementation-plan` | `plan` | birch-html-mcp (stdio) | [scenarios/birch-html-implementation-plan.md](scenarios/birch-html-implementation-plan.md) | Stdio transport + persisted file artifact (fast-agent only) |
+| Scenario | Server | Sub-page | Probe |
+| :--- | :--- | :--- | :--- |
+| `pr-review` | github-mcp-server :8082 (scaffolds a PR) | [scenarios/pr-review.md](scenarios/pr-review.md) | Skill-access primitives across host wrappers (bundled `skill://github/...` namespace) |
+| `repo-skills-discovery` | github-mcp-server :8082 (`--toolsets=all`) | [scenarios/repo-skills-discovery.md](scenarios/repo-skills-discovery.md) | Per-repo resource template `skill://{owner}/{repo}/{skill_name}/{+file_path}` + `list_repo_skills` tool (PR #2428) |
+| `hf-jobs-plan` | hf-mcp-server :8083 | [scenarios/hf-jobs-plan.md](scenarios/hf-jobs-plan.md) | Submission output (PEP 723 + Trackio) under dry-run |
+| `hf-train-with-monitoring` | hf-mcp-server :8083 | [scenarios/hf-train-with-monitoring.md](scenarios/hf-train-with-monitoring.md) | Cross-skill composition via catalog visibility |
+| `transformers-js-demo` | hf-mcp-server :8083 | [scenarios/transformers-js-demo.md](scenarios/transformers-js-demo.md) | Code-output skill (HTML/JS, no execution) |
+| `birch-html-implementation-plan` | birch-html-mcp (stdio) | [scenarios/birch-html-implementation-plan.md](scenarios/birch-html-implementation-plan.md) | Stdio transport + persisted file artifact (fast-agent only) |
 
 For an outside-reader narrative on what each scenario probes and why
 that specific MCP server, see [docs/findings/scenarios/index.md](../../../docs/findings/scenarios/index.md).
@@ -97,10 +98,11 @@ so once you've sourced the .env (`set -a && . "$AGENT_SKILLS_ENV_FILE"
 
 ### 1. Preflight
 
-Branches on scenario kind. Read `experiments/scenarios/<scenario>.yaml`
-to determine kind + endpoint.
+Read `experiments/scenarios/<scenario>.yaml` to determine which server
+the scenario points at (`mcp_server.endpoint` / `mcp_server.transport`),
+and whether it declares a `scaffolding_script` (only `pr-review` does).
 
-**pr-review (kind: `pr-review`)** — needs `github-mcp-server` on `:8082`:
+**pr-review** — needs `github-mcp-server` on `:8082`:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" "${MCP_SERVER_URL:-http://localhost:8082/mcp}"
@@ -116,8 +118,8 @@ GITHUB_PERSONAL_ACCESS_TOKEN=$(gh auth token) \
 server's `instructions` field would otherwise leak activation hints;
 the only signal the model should get is the `<available_skills>` catalog.
 
-**plan kind (hf-jobs-plan, hf-train-with-monitoring, transformers-js-demo)** —
-needs `hf-mcp-server` on `:8083` with the dry-run intercept:
+**hf-mcp-server scenarios (hf-jobs-plan, hf-train-with-monitoring, transformers-js-demo)** —
+need `hf-mcp-server` on `:8083` with the dry-run intercept:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -149,7 +151,7 @@ sentence (commit `9ed5f31` on `skills-over-mcp-experiment`) so it
 shouldn't bias activation, but watch for regressions if the branch
 moves.
 
-**plan kind, stdio transport (birch-html-implementation-plan)** —
+**birch-html-implementation-plan (stdio transport)** —
 the `birch-html-mcp` wrapper is a stdio Node binary, not an HTTP
 service. fast-agent spawns it on connect using the `birch_skills`
 entry in `fastagent.config.yaml` (`command: node`,
@@ -187,8 +189,8 @@ the harness's `setup_run` can resolve auth for the `hf_skills` server.
 
 ### 2. Scaffold (pr-review only)
 
-See [scenarios/pr-review.md](scenarios/pr-review.md). Skip for plan-kind
-scenarios.
+See [scenarios/pr-review.md](scenarios/pr-review.md). Skip when the
+scenario YAML has no `scaffolding_script`.
 
 ### 3. Run the client harness
 
@@ -258,7 +260,7 @@ GITHUB_TOKEN=$(gh auth token) FAST_AGENT_VARIANT=openrouter \
 GITHUB_TOKEN=$(gh auth token) FAST_AGENT_MODEL=openrouter.minimax/minimax-m2.7 \
   uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
 
-# Plan kind (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
+# HF scenarios (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
 FAST_AGENT_VARIANT=openai \
   uv run agent.py ../../scenarios/hf-jobs-plan.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
@@ -279,7 +281,7 @@ cd experiments/harnesses/codex
 GITHUB_TOKEN=$(gh auth token) \
   uv run --env-file "$AGENT_SKILLS_ENV_FILE" agent.py \
   ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
-# plan kind (HF_TOKEN sourced via --env-file):
+# HF scenarios (HF_TOKEN sourced via --env-file):
 uv run --env-file "$AGENT_SKILLS_ENV_FILE" agent.py \
   ../../scenarios/hf-jobs-plan.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
@@ -351,7 +353,7 @@ GITHUB_TOKEN=$(gh auth token) GOOSE_VARIANT=openrouter \
 GITHUB_TOKEN=$(gh auth token) GOOSE_PROVIDER=openai GOOSE_MODEL=gpt-5-mini \
   uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
 
-# Plan kind (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
+# HF scenarios (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
 GOOSE_VARIANT=openrouter \
   uv run agent.py ../../scenarios/hf-train-with-monitoring.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
@@ -369,7 +371,7 @@ Grep the log for the banner:
 grep -B 1 -A 40 "Ordered tool calls:" /tmp/verify-run.log
 ```
 
-The harness no longer grades runs against per-kind criteria — it just
+The harness no longer grades runs against acceptance criteria — it just
 records what tools the client invoked. Report:
 
 - The ordered tool-call list verbatim (name + args preview).
@@ -390,8 +392,8 @@ under `tool_calls`.
 - **Never run two client harnesses concurrently against the same
   server.** For pr-review they share the subject PR — `_find_review_url`
   grabs the last review on the PR via `gh api`, so another client
-  posting during your run leaks into the URL you report. For plan
-  kind, concurrent runs may interleave dry-run intercept logs and
+  posting during your run leaks into the URL you report. For read-only
+  scenarios, concurrent runs may interleave dry-run intercept logs and
   confuse server-side telemetry. Each client's tool-call history is
   process-local and safe; the URL and any shared server state isn't.
 

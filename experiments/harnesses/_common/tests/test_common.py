@@ -6,8 +6,9 @@ recording the MCP tool calls. The interesting surface to cover is:
   - token parsing (skill_name_from_arg, matches_expected_skill_uri) —
     still used by tooling that wants to compare URIs even though the
     runtime no longer asserts on them
-  - scenario YAML loading + kind-aware validation
-  - setup_run (token resolution, server config, prompt substitution)
+  - scenario YAML loading + scaffolding_script-aware validation
+  - setup_run (alias-based auth dispatch, scaffolding dispatch, prompt
+    substitution)
   - render_report + write_result_json shape (the call log is the result)
 
 Run from harnesses/:
@@ -119,53 +120,47 @@ def _write_yaml(path: Path, **fields) -> None:
     path.write_text(yaml.safe_dump(fields, sort_keys=False), encoding="utf-8")
 
 
-def test_load_scenario_pr_review_happy_path(tmp_path: Path):
+def test_load_scenario_scaffolded_happy_path(tmp_path: Path):
     path = tmp_path / "s.yaml"
     _write_yaml(
         path,
-        id="test", kind="pr-review", repo="a/b", head_branch="main", scaffolding_script="s.sh",
+        id="test", repo="a/b", head_branch="main", scaffolding_script="s.sh",
         prompt_template="PR #{pr_number} on {repo}",
     )
     s = load_scenario(path)
     assert s["id"] == "test"
-    assert s["kind"] == "pr-review"
+    assert s["scaffolding_script"] == "s.sh"
     assert s["prompt_template"].format(pr_number=7, repo="a/b") == "PR #7 on a/b"
 
 
-def test_load_scenario_plan_does_not_require_pr_fields(tmp_path: Path):
+def test_load_scenario_read_only_does_not_require_pr_fields(tmp_path: Path):
     path = tmp_path / "s.yaml"
     _write_yaml(
         path,
-        id="plan-test", kind="plan",
+        id="plan-test",
         prompt_template="just a plan",
     )
     s = load_scenario(path)
-    assert s["kind"] == "plan"
+    assert s["id"] == "plan-test"
+    assert "scaffolding_script" not in s
 
 
-def test_load_scenario_missing_kind_exits(tmp_path: Path):
+def test_load_scenario_missing_id_exits(tmp_path: Path):
     path = tmp_path / "bad.yaml"
-    _write_yaml(path, id="x", repo="a/b", head_branch="main", scaffolding_script="s.sh",
-                prompt_template="...")
+    _write_yaml(path, prompt_template="...")
     with pytest.raises(SystemExit) as ei:
         load_scenario(path)
-    assert "kind" in str(ei.value)
+    assert "id" in str(ei.value)
 
 
-def test_load_scenario_unknown_kind_exits(tmp_path: Path):
+def test_load_scenario_scaffold_missing_repo_exits(tmp_path: Path):
     path = tmp_path / "bad.yaml"
-    _write_yaml(path, id="x", kind="bogus", prompt_template="...")
+    _write_yaml(path, id="x", scaffolding_script="s.sh", prompt_template="...")
     with pytest.raises(SystemExit) as ei:
         load_scenario(path)
-    assert "unknown kind" in str(ei.value)
-
-
-def test_load_scenario_pr_missing_repo_exits(tmp_path: Path):
-    path = tmp_path / "bad.yaml"
-    _write_yaml(path, id="x", kind="pr-review", prompt_template="...")
-    with pytest.raises(SystemExit) as ei:
-        load_scenario(path)
-    assert "missing fields" in str(ei.value)
+    msg = str(ei.value)
+    assert "scaffolding_script" in msg
+    assert "repo" in msg
 
 
 # ---------------------------------------------------------------------- report
@@ -264,15 +259,14 @@ def test_render_report_empty_calls():
     assert "(none)" in text
 
 
-def test_setup_run_plan_resolves_token_and_skips_pr_state(monkeypatch):
+def test_setup_run_hf_alias_resolves_hf_token(monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "hf_test")
     scenario = {
-        "id": "hf-jobs-plan", "kind": "plan",
+        "id": "hf-jobs-plan",
         "prompt_template": "do a plan",
         "mcp_server": {"endpoint": "http://localhost:8083/mcp", "alias": "hf_skills"},
     }
     ctx = setup_run(scenario)
-    assert ctx["kind"] == "plan"
     assert ctx["token"] == "hf_test"
     assert ctx["token_env_var"] == "HF_TOKEN"
     assert ctx["server_alias"] == "hf_skills"
@@ -283,17 +277,32 @@ def test_setup_run_plan_resolves_token_and_skips_pr_state(monkeypatch):
     assert ctx["prompt"] == "do a plan"
 
 
-def test_setup_run_pr_review_uses_github_token_env_var(monkeypatch, tmp_path):
+def test_setup_run_github_alias_without_scaffolding_resolves_github_token(monkeypatch):
+    """A read-only scenario against github-mcp-server (e.g. repo-skills-discovery)
+    pulls a GitHub PAT from the alias prefix, not from a kind tag."""
+    monkeypatch.setenv("GITHUB_TOKEN", "gh_test")
+    scenario = {
+        "id": "repo-skills-discovery",
+        "prompt_template": "discover a skill in anthropics/skills",
+        "mcp_server": {"endpoint": "http://localhost:8082/mcp", "alias": "github_skills"},
+    }
+    ctx = setup_run(scenario)
+    assert ctx["token"] == "gh_test"
+    assert ctx["token_env_var"] == "GITHUB_TOKEN"
+    assert ctx["repo"] is None
+    assert ctx["pr_number"] is None
+
+
+def test_setup_run_pr_scaffold_substitutes_prompt(monkeypatch):
     monkeypatch.setenv("GITHUB_TOKEN", "gh_test")
     monkeypatch.setenv("PR_NUMBER", "42")  # bypass `gh pr list`
     scenario = {
-        "id": "pr-review", "kind": "pr-review",
+        "id": "pr-review",
         "prompt_template": "review #{pr_number} on {repo}",
         "mcp_server": {"endpoint": "http://localhost:8082/mcp", "alias": "github_skills"},
         "repo": "owner/sandbox", "head_branch": "f", "scaffolding_script": "ignored.sh",
     }
     ctx = setup_run(scenario)
-    assert ctx["kind"] == "pr-review"
     assert ctx["token"] == "gh_test"
     assert ctx["token_env_var"] == "GITHUB_TOKEN"
     assert ctx["repo"] == "owner/sandbox"
@@ -301,12 +310,36 @@ def test_setup_run_pr_review_uses_github_token_env_var(monkeypatch, tmp_path):
     assert ctx["prompt"] == "review #42 on owner/sandbox"
 
 
+def test_setup_run_unknown_alias_prefix_exits():
+    scenario = {
+        "id": "x",
+        "prompt_template": "...",
+        "mcp_server": {"endpoint": "http://localhost:9000/mcp", "alias": "mystery_skills"},
+    }
+    with pytest.raises(SystemExit) as ei:
+        setup_run(scenario)
+    assert "mystery_skills" in str(ei.value)
+
+
 def test_setup_run_missing_alias_exits():
     scenario = {
-        "id": "x", "kind": "plan",
+        "id": "x",
         "prompt_template": "...",
         "mcp_server": {"endpoint": "http://localhost:8083/mcp"},  # no alias
     }
     with pytest.raises(SystemExit) as ei:
         setup_run(scenario)
     assert "alias" in str(ei.value)
+
+
+def test_setup_run_stdio_skips_auth_and_endpoint():
+    scenario = {
+        "id": "x",
+        "prompt_template": "just a plan",
+        "mcp_server": {"alias": "birch_skills", "transport": "stdio"},
+    }
+    ctx = setup_run(scenario)
+    assert ctx["token"] is None
+    assert ctx["token_env_var"] is None
+    assert ctx["server_endpoint"] is None
+    assert ctx["pr_number"] is None

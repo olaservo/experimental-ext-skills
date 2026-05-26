@@ -1,6 +1,6 @@
 # Scenario: birch-html-implementation-plan
 
-**Kind:** `plan` · **Server:** birch-html-mcp (stdio) · **YAML:** [`experiments/scenarios/birch-html-implementation-plan.yaml`](../../../../experiments/scenarios/birch-html-implementation-plan.yaml)
+**Server:** birch-html-mcp (stdio) · **YAML:** [`experiments/scenarios/birch-html-implementation-plan.yaml`](../../../../experiments/scenarios/birch-html-implementation-plan.yaml)
 
 File-output skill probe over stdio. The agent reads the `birch-html`
 skill and writes a self-contained HTML implementation-plan artifact to

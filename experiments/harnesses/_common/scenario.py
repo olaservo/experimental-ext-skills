@@ -1,4 +1,11 @@
-"""Scenario YAML loader with per-kind required-field validation."""
+"""Scenario YAML loader.
+
+Scenarios declare a base set of fields (id, prompt_template, mcp_server);
+scenarios that mutate state additionally declare `scaffolding_script`,
+which triggers PR-style setup (repo + head_branch + prompt substitution)
+in `setup.py`. We don't have a `kind` discriminator — the presence of
+`scaffolding_script` is the only structural signal that flips behavior.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +14,7 @@ from pathlib import Path
 
 import yaml
 
-# Fields every scenario must declare regardless of kind.
-_BASE_REQUIRED = ("id", "kind", "prompt_template")
-
-# Fields required by specific scenario kinds, in addition to the base set.
-_PER_KIND_REQUIRED: dict[str, tuple[str, ...]] = {
-    "pr-review": ("repo", "head_branch", "scaffolding_script"),
-    "plan": (),  # plan scenarios run read-only; no scaffolding/repo plumbing.
-}
+_BASE_REQUIRED = ("id", "prompt_template")
 
 
 def load_scenario(path: Path) -> dict:
@@ -29,14 +29,13 @@ def load_scenario(path: Path) -> dict:
     if missing:
         sys.exit(f"Scenario YAML at {path} is missing required fields: {', '.join(missing)}")
 
-    kind = data["kind"]
-    if kind not in _PER_KIND_REQUIRED:
-        sys.exit(f"Scenario YAML at {path} declares unknown kind {kind!r}; "
-                 f"known kinds: {', '.join(sorted(_PER_KIND_REQUIRED))}")
-    kind_missing = [f for f in _PER_KIND_REQUIRED[kind] if not data.get(f)]
-    if kind_missing:
-        sys.exit(f"Scenario YAML at {path} (kind={kind}) is missing fields: "
-                 f"{', '.join(kind_missing)}")
+    if data.get("scaffolding_script"):
+        scaffold_missing = [f for f in ("repo", "head_branch") if not data.get(f)]
+        if scaffold_missing:
+            sys.exit(
+                f"Scenario YAML at {path} declares scaffolding_script but is "
+                f"missing: {', '.join(scaffold_missing)}"
+            )
     return data
 
 

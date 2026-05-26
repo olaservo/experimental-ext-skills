@@ -6,8 +6,8 @@ Each harness adds a sys.path shim so this package is importable:
     from _common import evaluate, load_scenario, ...
 
 Per-client: client spawn/embed + tool-call extraction. Shared here:
-scenario loading, token/PR resolution, the kind-dispatched evaluator,
-banner rendering, and results-JSON writing.
+scenario loading, token/PR resolution, tool-call recording, banner
+rendering, and results-JSON writing.
 """
 
 from _common.evaluators import evaluate

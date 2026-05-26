@@ -2,7 +2,6 @@
 # See docs/findings/scenarios/pr-review.md for what this probes and why.
 
 id: pr-review
-kind: pr-review
 description: >-
   Agent activates the review-pr skill bundled with olaservo/github-mcp-server,
   reviews a PR with four intentional seams, and posts a real review via the

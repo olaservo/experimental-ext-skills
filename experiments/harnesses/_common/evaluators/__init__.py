@@ -1,6 +1,6 @@
 """Tool-call logger for scenario runs.
 
-The harness used to grade each run against per-kind criteria (skill-read
+The harness used to grade each run against acceptance criteria (skill-read
 ordering, phrase-grep over the agent's output, workflow assertions). We
 dropped grading in favor of plain observation: record the MCP tool calls
 the client made and let the human read them.

@@ -1,9 +1,8 @@
-"""Generic scenario runner for goose — dispatches by scenario kind.
+"""Generic scenario runner for goose.
 
 Drives `goose run --output-format stream-json` and parses its JSONL
 StreamEvent stream. Server endpoint, alias, and the auth token come
-from the scenario YAML via `setup_run`. Pass criteria live in
-`_common/evaluators/`.
+from the scenario YAML via `setup_run`.
 
 SECURITY -- do not point at untrusted repos / endpoints (see
 fast-agent/agent.py).
@@ -16,8 +15,8 @@ Pre-reqs:
 - Provider API key for the chosen variant (ANTHROPIC_API_KEY,
   OPENAI_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY). Source
   `$AGENT_SKILLS_ENV_FILE` once per shell.
-- pr-review: GITHUB_TOKEN (or `gh auth token`).
-- plan:      HF_TOKEN.
+- Token for the scenario's server: GITHUB_TOKEN for github_* aliases,
+  HF_TOKEN for hf_* aliases.
 - The MCP server the scenario points at, running on its declared port.
 
 Model selection: scenario YAML's `models.goose` is a dict keyed by
@@ -298,8 +297,7 @@ def main() -> int:
     alias = ctx["server_alias"]
 
     print(f"Scenario: {scenario_path}")
-    print(f"Kind:    {ctx['kind']}")
-    if ctx["kind"] == "pr-review":
+    if ctx["pr_number"] is not None:
         print(f"Target:  {ctx['repo']} PR #{ctx['pr_number']}")
     variant_suffix = f" (variant={variant})" if variant else ""
     print(f"Provider/Model:  {provider} / {model}{variant_suffix}")

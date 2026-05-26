@@ -1,6 +1,6 @@
 # Scenario: transformers-js-demo
 
-**Kind:** `plan` · **Server:** hf-mcp-server :8083 (with `HF_JOBS_DRY_RUN=true`) · **YAML:** [`experiments/scenarios/transformers-js-demo.yaml`](../../../../experiments/scenarios/transformers-js-demo.yaml)
+**Server:** hf-mcp-server :8083 (with `HF_JOBS_DRY_RUN=true`) · **YAML:** [`experiments/scenarios/transformers-js-demo.yaml`](../../../../experiments/scenarios/transformers-js-demo.yaml)
 
 Code-output skill probe. The agent reads `transformers-js` (a JS-output
 skill bundling 7 reference files) and writes a self-contained browser

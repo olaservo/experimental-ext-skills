@@ -1,20 +1,20 @@
-"""Generic scenario runner for fast-agent — dispatches by scenario kind.
+"""Generic scenario runner for fast-agent.
 
-Exercises the activation primitive of the Skills-over-MCP SEP. For
-`kind: pr-review`, the model must walk the three-step pending-review
-workflow (Scenario #1). For `kind: plan`, the model must read the
-named skill and produce a plan whose prose covers prescribed elements,
-without ever calling the forbidden tools (Scenario #2).
+Exercises the activation primitive of the Skills-over-MCP SEP. The
+scenario YAML drives which MCP server gets contacted and whether
+scaffolding runs first; setup.py turns the YAML into a uniform `ctx`
+dict that this script consumes.
 
 SECURITY -- do not point this at untrusted repos / endpoints. PR
 diffs and skill content are attacker-controlled on public sources;
 hostile content can redirect the agent. Keep target endpoints sandboxed.
 
-Pre-reqs vary by kind:
-  pr-review: ANTHROPIC_API_KEY, GITHUB_TOKEN, MCP server on the scenario's
-             endpoint without --read-only, and a reviewable PR (scaffold
-             with `scaffolding_script` from the YAML).
-  plan:      ANTHROPIC_API_KEY, MCP server on the scenario's endpoint.
+Pre-reqs:
+  Always: provider API key for the chosen variant; the MCP server
+          declared in the scenario YAML running on its declared endpoint.
+  Scenarios with scaffolding_script: GITHUB_TOKEN (the script scaffolds
+          a fresh PR on the subject repo before the agent runs).
+  Scenarios against hf_skills: HF_TOKEN (forwarded to the server).
 
 Usage:
     cd experiments/harnesses/fast-agent
@@ -229,8 +229,7 @@ def _extract_tool_calls(agent) -> list[tuple[str, str, dict]]:
 )
 async def main() -> int:
     print(f"Scenario: {_SCENARIO_PATH}")
-    print(f"Kind:    {CTX['kind']}")
-    if CTX["kind"] == "pr-review":
+    if CTX["pr_number"] is not None:
         print(f"Target:  {CTX['repo']} PR #{CTX['pr_number']}")
     print(f"Server:  {SERVER_ALIAS}")
     print(f"Model:   {MODEL}")
