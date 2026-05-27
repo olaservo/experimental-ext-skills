@@ -1,6 +1,6 @@
 ---
 name: run-scenario
-description: Run a Skills-over-MCP cross-client scenario end-to-end against the right MCP server, execute the named client's harness, and report the criteria banner. The scenario YAML names the MCP server endpoint; harness behavior follows from structural signals (alias prefix picks the auth token; `scaffolding_script` triggers fresh-PR setup). `pr-review` is the only state-mutating scenario (scaffolds a PR on github-mcp-server); `repo-skills-discovery` is read-only against the same github-mcp-server exercising PR #2428's per-repo resource template; hf-jobs-plan / hf-train-with-monitoring / transformers-js-demo run against hf-mcp-server with `HF_JOBS_DRY_RUN=true`; `birch-html-implementation-plan` runs against the stdio `birch-html-mcp` wrapper and produces a real HTML file. Use when asked to run a scenario, reproduce Scenarios #1–#6, or test a client (fast-agent, codex, goose).
+description: Run a Skills-over-MCP cross-client scenario end-to-end against the right MCP server, execute the named client's harness, and report the criteria banner. The scenario YAML names the MCP server endpoint; harness behavior follows from structural signals (alias prefix picks the auth token; `scaffolding_script` triggers fresh-PR setup). `pr-review` is the only state-mutating scenario (scaffolds a PR on github-mcp-server); `repo-skills-discovery` is read-only against the same github-mcp-server exercising PR #2428's per-repo resource template; `transformers-js-demo` is a read-only HF probe against hf-mcp-server (no `HF_JOBS_DRY_RUN` needed); `birch-html-implementation-plan` runs against the stdio `birch-html-mcp` wrapper and produces a real HTML file. Use when asked to run a scenario, reproduce a scenario, or test a client (fast-agent, codex, goose).
 ---
 
 # run-scenario
@@ -51,8 +51,6 @@ the matching sub-page below** for scenario-specific scaffold/banner/notes
 | :--- | :--- | :--- | :--- |
 | `pr-review` | github-mcp-server :8082 (scaffolds a PR) | [scenarios/pr-review.md](scenarios/pr-review.md) | Skill-access primitives across host wrappers (bundled `skill://github/...` namespace) |
 | `repo-skills-discovery` | github-mcp-server :8082 (`--toolsets=all`) | [scenarios/repo-skills-discovery.md](scenarios/repo-skills-discovery.md) | Per-repo resource template `skill://{owner}/{repo}/{skill_name}/{+file_path}` + `list_repo_skills` tool (PR #2428) |
-| `hf-jobs-plan` | hf-mcp-server :8083 | [scenarios/hf-jobs-plan.md](scenarios/hf-jobs-plan.md) | Submission output (PEP 723 + Trackio) under dry-run |
-| `hf-train-with-monitoring` | hf-mcp-server :8083 | [scenarios/hf-train-with-monitoring.md](scenarios/hf-train-with-monitoring.md) | Cross-skill composition via catalog visibility |
 | `transformers-js-demo` | hf-mcp-server :8083 | [scenarios/transformers-js-demo.md](scenarios/transformers-js-demo.md) | Code-output skill (HTML/JS, no execution) |
 | `birch-html-implementation-plan` | birch-html-mcp (stdio) | [scenarios/birch-html-implementation-plan.md](scenarios/birch-html-implementation-plan.md) | Stdio transport + persisted file artifact (fast-agent only) |
 
@@ -118,8 +116,8 @@ GITHUB_PERSONAL_ACCESS_TOKEN=$(gh auth token) \
 server's `instructions` field would otherwise leak activation hints;
 the only signal the model should get is the `<available_skills>` catalog.
 
-**hf-mcp-server scenarios (hf-jobs-plan, hf-train-with-monitoring, transformers-js-demo)** —
-need `hf-mcp-server` on `:8083` with the dry-run intercept:
+**hf-mcp-server scenario (transformers-js-demo)** —
+needs `hf-mcp-server` on `:8083`:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -135,15 +133,12 @@ cd "${HF_MCP_SERVER_DIR:-experiments/.workspace/hf-mcp-server}"
 set -a && . "$AGENT_SKILLS_ENV_FILE" && set +a
 DEFAULT_HF_TOKEN="$HF_TOKEN" \
   WEB_APP_PORT=8083 \
-  HF_JOBS_DRY_RUN=true \
   node packages/app/dist/server/streamableHttp.js
 ```
-`HF_JOBS_DRY_RUN=true` is required — `hf_jobs("uv", ...)` and
-`hf_jobs("run", ...)` will otherwise submit real training jobs to the
-account behind `HF_TOKEN`. The intercept returns a synthetic "captured
-spec" response without contacting the API; the agent's submission
-shape (script, secrets, hardware tier) is still graded from the call
-args, just not executed.
+`transformers-js-demo` is read-only — the artifact is the agent's final
+assistant response and no `hf_jobs` tool call is issued, so the
+`HF_JOBS_DRY_RUN=true` intercept that earlier HF scenarios relied on is
+not required here.
 
 The hf-mcp-server doesn't currently have a `DISABLE_INSTRUCTIONS` knob —
 its `instructions` field has been edited to drop the skills-pointer
@@ -184,8 +179,9 @@ set -a && . "$AGENT_SKILLS_ENV_FILE" && set +a
 ```
 The codex runner instead expects the file via `uv run --env-file
 "$AGENT_SKILLS_ENV_FILE"` — its child process needs the env, not the
-parent shell. Plan scenarios additionally need `HF_TOKEN` exported so
-the harness's `setup_run` can resolve auth for the `hf_skills` server.
+parent shell. Scenarios with an `hf_skills` alias (e.g.,
+`transformers-js-demo`) additionally need `HF_TOKEN` exported so the
+harness's `setup_run` can resolve auth for the server.
 
 ### 2. Scaffold (pr-review only)
 
@@ -260,9 +256,9 @@ GITHUB_TOKEN=$(gh auth token) FAST_AGENT_VARIANT=openrouter \
 GITHUB_TOKEN=$(gh auth token) FAST_AGENT_MODEL=openrouter.minimax/minimax-m2.7 \
   uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
 
-# HF scenarios (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
+# HF scenario (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
 FAST_AGENT_VARIANT=openai \
-  uv run agent.py ../../scenarios/hf-jobs-plan.yaml >/tmp/verify-run.log 2>&1
+  uv run agent.py ../../scenarios/transformers-js-demo.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
 ```
 
@@ -281,9 +277,9 @@ cd experiments/harnesses/codex
 GITHUB_TOKEN=$(gh auth token) \
   uv run --env-file "$AGENT_SKILLS_ENV_FILE" agent.py \
   ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
-# HF scenarios (HF_TOKEN sourced via --env-file):
+# HF scenario (HF_TOKEN sourced via --env-file):
 uv run --env-file "$AGENT_SKILLS_ENV_FILE" agent.py \
-  ../../scenarios/hf-jobs-plan.yaml >/tmp/verify-run.log 2>&1
+  ../../scenarios/transformers-js-demo.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
 ```
 Codex's TPM-tier sensitivity is scenario-specific — see
@@ -353,9 +349,9 @@ GITHUB_TOKEN=$(gh auth token) GOOSE_VARIANT=openrouter \
 GITHUB_TOKEN=$(gh auth token) GOOSE_PROVIDER=openai GOOSE_MODEL=gpt-5-mini \
   uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
 
-# HF scenarios (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
+# HF scenario (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
 GOOSE_VARIANT=openrouter \
-  uv run agent.py ../../scenarios/hf-train-with-monitoring.yaml >/tmp/verify-run.log 2>&1
+  uv run agent.py ../../scenarios/transformers-js-demo.yaml >/tmp/verify-run.log 2>&1
 echo "exit=$?"
 ```
 

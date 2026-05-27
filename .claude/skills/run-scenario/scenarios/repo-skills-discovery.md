@@ -127,6 +127,6 @@ Report verbatim:
 
 ## Goose-specific behavior
 
-Same as `hf-jobs-plan`: Goose interleaves `todo__todo_write` calls with
-skill activation. Note them in the report alongside the real activation
-signal; they aren't graded.
+Goose interleaves `todo__todo_write` calls with skill activation. Note
+them in the report alongside the real activation signal; they aren't
+graded.

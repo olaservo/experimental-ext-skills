@@ -19,7 +19,7 @@ Pre-reqs:
 Usage:
     cd experiments/harnesses/fast-agent
     GITHUB_TOKEN=$(gh auth token) uv run agent.py ../../scenarios/pr-review.yaml
-    HF_TOKEN=hf_xxx              uv run agent.py ../../scenarios/hf-jobs-plan.yaml
+    HF_TOKEN=hf_xxx              uv run agent.py ../../scenarios/transformers-js-demo.yaml
 
 Windows: prepend `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` so Rich's
 block-drawing characters don't crash the cp1252 console.

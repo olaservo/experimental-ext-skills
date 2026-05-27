@@ -40,7 +40,7 @@ from _common.tokens import (  # noqa: E402
 
 
 SKILL_URI = "skill://pull-requests/SKILL.md"
-HF_SKILL_URI = "skill://huggingface-llm-trainer/SKILL.md"
+HF_SKILL_URI = "skill://transformers-js/SKILL.md"
 
 
 # Tool-call shape is (name, raw_name, args) — see _common/report.py.
@@ -192,19 +192,19 @@ def test_write_result_json_pr_shape(tmp_path: Path):
     assert payload["review_url"] == "https://example.com/r/1"
 
 
-def test_write_result_json_plan_shape(tmp_path: Path):
+def test_write_result_json_non_pr_shape(tmp_path: Path):
     calls = [_t("read_mcp_resource", {"uri": HF_SKILL_URI})]
     path = write_result_json(
-        client="codex", scenario_id="hf-jobs-plan", model="gpt-5.1-codex",
+        client="codex", scenario_id="transformers-js-demo", model="gpt-5.1-codex",
         tool_calls=calls, elapsed_ms=4200,
-        final_text="Job submitted!",
+        final_text="<html>...</html>",
         results_dir=tmp_path,
     )
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert "criteria" not in payload
     assert "overall" not in payload
-    assert payload["final_text"] == "Job submitted!"
-    # No review_url for plan scenarios.
+    assert payload["final_text"] == "<html>...</html>"
+    # No review_url outside pr-review.
     assert "review_url" not in payload
 
 
@@ -240,14 +240,14 @@ def test_render_report_emits_pr_banner_with_review_url():
     assert "FAIL" not in text
 
 
-def test_render_report_plan_omits_review_url():
+def test_render_report_non_pr_omits_review_url():
     calls = [_t("read_mcp_resource", {"uri": HF_SKILL_URI})]
     buf = io.StringIO()
     render_report(calls=calls, elapsed_s=2.0, out=buf)
     text = buf.getvalue()
     assert "Ordered tool calls:" in text
     assert "Wall-clock:" in text
-    # Plan scenarios omit the Review URL line entirely.
+    # Non-PR scenarios omit the Review URL line entirely.
     assert "Review URL:" not in text
 
 
@@ -262,8 +262,8 @@ def test_render_report_empty_calls():
 def test_setup_run_hf_alias_resolves_hf_token(monkeypatch):
     monkeypatch.setenv("HF_TOKEN", "hf_test")
     scenario = {
-        "id": "hf-jobs-plan",
-        "prompt_template": "do a plan",
+        "id": "transformers-js-demo",
+        "prompt_template": "write a demo",
         "mcp_server": {"endpoint": "http://localhost:8083/mcp", "alias": "hf_skills"},
     }
     ctx = setup_run(scenario)
@@ -273,8 +273,8 @@ def test_setup_run_hf_alias_resolves_hf_token(monkeypatch):
     assert ctx["server_endpoint"] == "http://localhost:8083/mcp"
     assert ctx["repo"] is None
     assert ctx["pr_number"] is None
-    # Plan prompts have no {pr_number}/{repo} substitution.
-    assert ctx["prompt"] == "do a plan"
+    # Non-scaffolded prompts have no {pr_number}/{repo} substitution.
+    assert ctx["prompt"] == "write a demo"
 
 
 def test_setup_run_github_alias_without_scaffolding_resolves_github_token(monkeypatch):

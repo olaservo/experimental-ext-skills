@@ -24,7 +24,7 @@ Usage:
     GITHUB_TOKEN=$(gh auth token) \\
         uv run --env-file /path/to/.env agent.py ../../scenarios/pr-review.yaml
     HF_TOKEN=hf_xxx \\
-        uv run --env-file /path/to/.env agent.py ../../scenarios/hf-jobs-plan.yaml
+        uv run --env-file /path/to/.env agent.py ../../scenarios/transformers-js-demo.yaml
 """
 
 # /// script
