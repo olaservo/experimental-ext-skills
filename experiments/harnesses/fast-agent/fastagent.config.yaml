@@ -31,14 +31,19 @@ mcp:
 
     hf_skills:
       transport: http
-      url: http://localhost:8083/mcp
+      url: https://huggingface.co/mcp
       headers:
         Authorization: "Bearer ${HF_TOKEN}"
-      # Same contamination control as github_skills — the HF MCP server
-      # (skills-over-mcp-experiment branch) already drops the skills
-      # pointer from its instructions field, but suppress the rest too
-      # so the only signal is `<available_skills>`.
+      # Same contamination control as github_skills. Prod's instructions
+      # field carries generic HF-tool guidance (no skills pointer), but
+      # suppress it so the only activation signal is `<available_skills>`.
       include_instructions: false
+      # NOTE: on evalstate/fast-agent main `skills_auto_approve` is a
+      # no-op (the v2-fork consent-store auto-surfacing was never merged
+      # upstream). Skills are NOT auto-surfaced from the server here —
+      # the harness installs `mcp_server.install_skill` into a managed dir
+      # and injects it into <available_skills> before the run (SEP-2640
+      # registry/install scope). Kept for documentation; harmless.
       skills_auto_approve: true
 
     birch_skills:

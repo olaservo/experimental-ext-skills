@@ -1,6 +1,6 @@
 ---
 name: run-scenario
-description: Run a Skills-over-MCP cross-client scenario end-to-end against the right MCP server, execute the named client's harness, and report the criteria banner. The scenario YAML names the MCP server endpoint; harness behavior follows from structural signals (alias prefix picks the auth token; `scaffolding_script` triggers fresh-PR setup). `pr-review` is the only state-mutating scenario (scaffolds a PR on github-mcp-server); `repo-skills-discovery` is read-only against the same github-mcp-server exercising PR #2428's per-repo resource template; `transformers-js-demo` is a read-only HF probe against hf-mcp-server (no `HF_JOBS_DRY_RUN` needed); `birch-html-implementation-plan` runs against the stdio `birch-html-mcp` wrapper and produces a real HTML file. Use when asked to run a scenario, reproduce a scenario, or test a client (fast-agent, codex, goose).
+description: Run a Skills-over-MCP cross-client scenario end-to-end against the right MCP server, execute the named client's harness, and report the criteria banner. The scenario YAML names the MCP server endpoint; harness behavior follows from structural signals (alias prefix picks the auth token; `scaffolding_script` triggers fresh-PR setup). `pr-review` is the only state-mutating scenario (scaffolds a PR on github-mcp-server); `repo-skills-discovery` is read-only against the same github-mcp-server exercising PR #2428's per-repo resource template; `transformers-js-demo` is a read-only HF probe against hf-mcp-server (no `HF_JOBS_DRY_RUN` needed); `birch-html-implementation-plan` runs against the stdio `birch-html-mcp` wrapper and produces a real HTML file. Use when asked to run a scenario, reproduce a scenario, or test a client (fast-agent, codex, goose, hermes).
 ---
 
 # run-scenario
@@ -11,7 +11,7 @@ obvious from reading the harness code alone.
 
 ## Inputs
 
-- **client** (required): `fast-agent` | `codex` | `goose`.
+- **client** (required): `fast-agent` | `codex` | `goose` | `hermes`.
 - **scenario** (optional): scenario id (YAML filename stem). Default: `pr-review`.
 - **model** (required — confirm with the user, even when defaulting): which
   model to test. The scenario YAML's `models.<client>` entry is the *default*,
@@ -31,14 +31,21 @@ obvious from reading the harness code alone.
     gpt-5+ models and routes them through `/v1/responses` transparently
     (`should_use_responses_api` in `openai.rs:269`), so `gpt-5.5` works
     via the openai variant without extra config.
+  - **hermes**: pick a `HERMES_VARIANT` (`anthropic` today — the matrix
+    starts with a single baseline), or set `HERMES_MODEL=<provider/model>`
+    for an ad-hoc model. Hermes encodes the provider in the `-m` slug
+    (e.g. `anthropic/claude-sonnet-4-6`, `openrouter/deepseek/deepseek-v4-pro`),
+    so there's no separate provider flag. Variants resolve to the scenario
+    YAML's `models.hermes.<variant>` map.
 - **pr_number** (optional, pr-review only): target a specific open PR
   instead of the auto-detected head of `feature/input-validation-enhancement`.
 
 If invoked without an explicit client / model (e.g. bare `/run-scenario`),
 ask the user via `AskUserQuestion` before preflight — one batched question
 for client + scenario + model. Show the scenario default as the recommended
-option; for fast-agent and goose, list their four variants. Skip the
-question only if the user named all three in the same turn.
+option; for fast-agent and goose, list their four variants (hermes has
+one, `anthropic`). Skip the question only if the user named all three in
+the same turn.
 
 ## Scenarios
 
@@ -72,7 +79,7 @@ their own checkouts instead.
 | `HF_MCP_SERVER_DIR` | `experiments/.workspace/hf-mcp-server` | Clone of `olaservo/hf-mcp-server@skills-over-mcp-experiment` (`pnpm build` artifacts at `packages/app/dist/`) |
 | `BIRCH_MCP_SERVER_DIR` | `experiments/.workspace/birch-html` | Clone of `olaservo/birch-html@add-mcp-server-wrapper` (`mcp-server/dist/server.js` is the stdio entry; `skill/scripts/finish_birch_html.py` is the postprocess) |
 | `MCP_SERVER_URL` | `http://localhost:8082/mcp` | Where the github-mcp-server listens (pr-review) |
-| `HF_MCP_SERVER_URL` | `http://localhost:8083/mcp` | Where the hf-mcp-server listens (plan scenarios) |
+| `HF_MCP_SERVER_URL` | `https://huggingface.co/mcp` | Live prod hf-mcp-server (transformers-js-demo); override to a local `http://localhost:8083/mcp` build to run against a dev server |
 | `AGENT_SKILLS_ENV_FILE` | unset | Absolute path to a `.env` containing `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `HF_TOKEN` |
 
 Defaults are relative to the WG repo root, so they work as-is when
@@ -117,17 +124,20 @@ server's `instructions` field would otherwise leak activation hints;
 the only signal the model should get is the `<available_skills>` catalog.
 
 **hf-mcp-server scenario (transformers-js-demo)** —
-needs `hf-mcp-server` on `:8083`:
+defaults to the live prod server at `https://huggingface.co/mcp`
+(skills are deployed there), so no local launch is needed. Preflight it:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}" -X POST \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"preflight","version":"0"}}}' \
-  --max-time 5 "${HF_MCP_SERVER_URL:-http://localhost:8083/mcp}"
+  --max-time 5 "${HF_MCP_SERVER_URL:-https://huggingface.co/mcp}"
 ```
 Bare GET returns 400; the JSON-RPC POST above returns 200 when the
-server is healthy. If not running, launch from `$HF_MCP_SERVER_DIR`:
+server is healthy. To run against a local dev build instead, set
+`HF_MCP_SERVER_URL=http://localhost:8083/mcp` and launch from
+`$HF_MCP_SERVER_DIR`:
 ```bash
 cd "${HF_MCP_SERVER_DIR:-experiments/.workspace/hf-mcp-server}"
 set -a && . "$AGENT_SKILLS_ENV_FILE" && set +a
@@ -359,6 +369,52 @@ Note: goose does not run `birch-html-implementation-plan` — that scenario
 uses a stdio MCP server and goose's harness only writes
 `streamable_http` extension config today.
 
+**hermes** — Python subprocess driving `hermes chat -q "<prompt>"`. The
+harness writes a hermetic `HERMES_HOME` tempdir with `config.yaml`
+(model + MCP server + `mcp.skills_extension: experimental`); the user's
+real `~/.hermes/` is never touched. Hermes has no JSON stream output, so
+tool calls are read back from the run's SQLite session store
+(`$HERMES_HOME/state.db`, table `messages`) after the process exits.
+
+Source the .env once per shell so the provider key is visible:
+```bash
+set -a && . "$AGENT_SKILLS_ENV_FILE" && set +a
+```
+
+hermes exposes one named variant today (`HERMES_VARIANT=anthropic`,
+default). The model is a combined `provider/model` slug named in the
+scenario YAML's `models.hermes` map — hermes encodes the provider in
+`-m`, so there's no separate provider flag:
+
+| Variant | Model slug | Notes |
+| :--- | :--- | :--- |
+| `anthropic` (default) | `anthropic/claude-sonnet-4-6` | Single baseline; expand the matrix once the harness is proven. |
+
+`HERMES_MODEL=<provider/model>` overrides any variant lookup (e.g.
+`openrouter/deepseek/deepseek-v4-pro`). An unknown variant fails fast
+with a "no hermes.X entry" message.
+
+Invocation:
+```bash
+cd experiments/harnesses/hermes
+
+# Default Anthropic baseline:
+GITHUB_TOKEN=$(gh auth token) \
+  uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
+
+# Ad-hoc model override:
+GITHUB_TOKEN=$(gh auth token) HERMES_MODEL=openrouter/deepseek/deepseek-v4-pro \
+  uv run agent.py ../../scenarios/pr-review.yaml >/tmp/verify-run.log 2>&1
+
+# HF scenario (HF_TOKEN comes from $AGENT_SKILLS_ENV_FILE):
+uv run agent.py ../../scenarios/transformers-js-demo.yaml >/tmp/verify-run.log 2>&1
+echo "exit=$?"
+```
+
+Override the 600s wall-clock cap with `HERMES_TIMEOUT_S=<seconds>`. Like
+goose, hermes does not run `birch-html-implementation-plan` (stdio
+transport); the harness supports HTTP MCP servers only.
+
 ### 4. Report
 
 Grep the log for the banner:
@@ -417,6 +473,21 @@ under `tool_calls`.
   https://github.com/olaservo/goose.git --branch mcp-skills-sep
   --no-default-features --features rustls-tls --locked goose-cli`.
   Override path with `GOOSE_BIN=/abs/path/goose[.exe]`.
+
+- **Hermes binary**: install the fork branch — clone
+  `olaservo/hermes-agent @ feature/add-skill-over-mcp-support` and
+  `uv pip install -e ".[all]"` (or run its `./setup-hermes.sh`), which
+  puts `hermes` on PATH. Override with `HERMES_BIN=/abs/path/hermes[.exe]`.
+
+  **PATH-shadowing trap** (same shape as codex). A stock upstream
+  `hermes` install would run the scenario fine but never materialize
+  MCP-served skills — the call list comes back with no skill read and
+  the agent chases the task with raw github-mcp tools. The skills path
+  also depends on `mcp.skills_extension: experimental` being set (the
+  harness writes it into the hermetic config) AND the server advertising
+  the `io.modelcontextprotocol/skills` capability. If a run has no skill
+  read, confirm the binary is the fork build before concluding "hermes
+  doesn't activate."
 
 - **Do not modify** `fastagent.config.yaml` or `~/.codex/config.toml`
   to reach the MCP server. All runners inject server config in-memory

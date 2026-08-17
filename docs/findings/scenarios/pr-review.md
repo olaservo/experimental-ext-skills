@@ -1,9 +1,13 @@
 # Scenario: pr-review
 
-> **N=5 caveat.** Per-cell pass rates below aggregate 5 trials per
-> client, all run 2026-04-27. Treat as samples, not fixed behavior;
-> wrapper-level outcomes (which dispatch primitive each fork emits)
-> are stable across trials, criterion-level outcomes are not.
+> **Sampling caveats.** The cross-client section below aggregates 5
+> trials per client (all `claude-haiku-4-5`), run 2026-04-27. The
+> cross-model section further down aggregates 3 trials per
+> (fast-agent, model), run 2026-05-27 against the same scaffolded PR
+> series on `olaservo/code-review-subject`. Treat individual outcomes
+> as samples, not fixed behavior. Wrapper-level outcomes (which
+> dispatch primitive each fork emits) are stable across trials;
+> criterion-level outcomes are not.
 
 **MCP server:** [`olaservo/github-mcp-server@add-agent-skills`](https://github.com/olaservo/github-mcp-server/tree/add-agent-skills) · **Scenario YAML:** [`experiments/scenarios/pr-review.yaml`](../../../experiments/scenarios/pr-review.yaml) · **Skill:** `pull-requests` (served as `skill://pull-requests/SKILL.md`)
 
@@ -109,6 +113,67 @@ the skill body says otherwise.
   not a single mistaken call. This points at the model emitting a
   workflow shape it learned elsewhere and the wrapper not coercing
   it back into the staged-review path.
+
+## Cross-model findings (fast-agent, 8 models × 3 reps)
+
+> Run 2026-05-27. fast-agent client only. Each cell is 3 trials
+> against scaffolded PRs #132–156 on `olaservo/code-review-subject`.
+> The four cross-model probes are: does the model read the skill
+> before mutating? does it follow the three-step pending-review
+> workflow? does it handle the author-own-PR `REQUEST_CHANGES` fallback?
+> does it produce a final assistant response?
+
+| Model | Variant id | Activated | Workflow | Final text | Median wall-clock | Tools/rep |
+| :--- | :--- | :---: | :---: | :---: | ---: | ---: |
+| Claude Haiku 4.5 | `anthropic.claude-haiku-4-5-20251001` | 3/3 | 3/3 | 3/3 | 53s | 11 |
+| Gemini 3.5 Flash | `google.gemini-3.5-flash` | 3/3 † | 0/3 | 0/3 | 55s ‡ | 21 (cap) |
+| GPT-5.5 | `responses.gpt-5.5` (patched) | 3/3 | 3/3 | 3/3 | 144s | 25 |
+| DeepSeek v4 Pro | `openrouter.deepseek/deepseek-v4-pro` | 3/3 | 3/3 | 3/3 | 194s | 14 |
+| Kimi K2.6 | `openrouter.moonshotai/kimi-k2.6` | 3/3 | 3/3 | 3/3 | 130s | 13 |
+| MiniMax M2.7 | `openrouter.minimax/minimax-m2.7` | 3/3 | 3/3 | 3/3 | 268s | 11 |
+| Qwen 3.7 Max | `openrouter.qwen/qwen3.7-max` | 3/3 | 3/3 | 3/3 | 152s | 18 |
+| GLM 4.6 | `openrouter.z-ai/glm-4.6` | 3/3 | 3/3 | 3/3 | 85s | 11 |
+
+† Gemini reads the skill but loops between `read_skill` and
+`pull_request_read.get` indefinitely, hitting the harness's
+turn cap without ever creating a pending review or emitting final
+text. **Skill read happens, but the workflow doesn't execute** — see
+the [fast-agent fork bugs](../../experimental-findings.md#fast-agent-fork-provider-bugs-discovered-during-cross-model-runs)
+for the call-binding root cause.
+
+‡ Gemini's median is per-rep wall-clock to cap, not time-to-complete.
+
+### Cross-model wrapper observations
+
+- **Author-own-PR `REQUEST_CHANGES` fallback**: GitHub rejects
+  `REQUEST_CHANGES` from the PR author with `422`; agents must
+  resubmit as `COMMENT`. Haiku, gpt-5.5, DeepSeek, Qwen, MiniMax,
+  GLM all triggered the double-submit. **Kimi K2.6 is the
+  exception** — it submitted as `COMMENT` on the first try in 2/3
+  reps, recognizing the constraint proactively. Worth a follow-up
+  read of its system-prompt awareness for GitHub PR conventions.
+- **`read_skill` ordering** is not stable. Haiku reps 1+3 put
+  `read_skill` at index [0], rep 2 read PR data first and the
+  skill at [2]. gpt-5.5 reads the skill first then fetches 6–8
+  source files via `get_file_contents` before commenting. DeepSeek
+  puts `read_skill` at [0] every rep. The order varies but the
+  *presence* of `read_skill` before any mutating call is stable
+  across all non-Gemini models.
+- **Qwen's argument-loss retry pattern**: Qwen reps 1+3 hit
+  `Error: Could not resolve to a Repository with the name '/'` /
+  `'/code-review-subject'` (empty owner string in `get_latest_review`
+  args). The model recovered via `delete_pending` + retry but
+  burned 2–6 extra tool calls per rep. Same root cause shape as
+  DeepSeek's birch-html argument-loss loop, but Qwen recovers
+  faster.
+- **gpt-5.5 over-fetches context**: 24–26 tool calls vs Haiku's
+  11–12. Most of the gap is `get_file_contents` reads of source
+  files (validation.ts, todoStore.ts, package.json, etc.) before
+  composing comments. Doesn't fail, just spends more time being
+  thorough.
+- **DeepSeek birch outlier (cross-scenario, not pr-review):**
+  53 min single rep with 23 argument-loss errors on
+  `write_text_file`. See [birch-html-implementation-plan](birch-html-implementation-plan.md).
 
 ### Comparison to prior single-trial findings
 

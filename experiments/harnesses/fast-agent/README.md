@@ -1,7 +1,9 @@
 # skills-e2e-fast-agent
 
-Scenario #1 harness for `olaservo/fast-agent @ experimental/skills-over-mcp`.
-Library-embed (Python) — `pyproject.toml` git-deps the fork branch;
+Scenario #1 harness for `evalstate/fast-agent @ main` (upstream — carries
+the merged SEP-2640 registry/install code that consumes the prod HF
+server's digest-gated `skill://*.tar.gz` archives).
+Library-embed (Python) — `pyproject.toml` git-deps the branch;
 `uv sync` clones it to uv's cache.
 
 - **Runbook + env-var reference + pass-criteria details**: the

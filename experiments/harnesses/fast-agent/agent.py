@@ -49,6 +49,17 @@ from _common import (  # noqa: E402
 
 from fast_agent import FastAgent  # noqa: E402
 
+# SEP-2640 registry/install API (evalstate/fast-agent main). Used only
+# when a scenario declares `mcp_server.install_skill`; harmless to import
+# for scenarios that don't (pr-review, etc.).
+from fast_agent.core.instruction_refresh import rebuild_agent_instruction  # noqa: E402
+from fast_agent.skills.mcp_registry import (  # noqa: E402
+    install_mcp_registry_skill,
+    select_mcp_registry_skill,
+)
+from fast_agent.skills.operations import reload_skill_manifests  # noqa: E402
+from fast_agent.skills.registry import format_skills_for_prompt  # noqa: E402
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -82,6 +93,19 @@ if CTX["token_env_var"]:
     os.environ[CTX["token_env_var"]] = CTX["token"]
 
 PROMPT = CTX["prompt"]
+
+# SEP-2640 host-side install. When a scenario's `mcp_server` block names
+# `install_skill`, the harness pulls that skill from the server's
+# `skill://index.json` registry, SHA-256-verifies + unpacks it into a
+# per-scenario managed dir, then injects it into `<available_skills>`
+# before the run — because evalstate/fast-agent main ships only the
+# registry/install scope of SEP-2640 (no model-runtime `skill://` reads),
+# so the host must install before the model can activate. The dir is
+# absolute and computed here, before main() chdirs into a per-run workdir.
+_INSTALL_SKILL = (SCENARIO.get("mcp_server") or {}).get("install_skill")
+_MANAGED_SKILLS_DIR = (
+    _REPO_ROOT / "experiments" / ".workspace" / "managed-skills" / SCENARIO["id"]
+).resolve()
 
 
 def _resolve_model_and_variant(scenario: dict) -> tuple[str | None, str | None]:
@@ -220,6 +244,77 @@ def _extract_tool_calls(agent) -> list[tuple[str, str, dict]]:
     return calls
 
 
+async def _install_and_activate_skill(
+    app,
+    *,
+    server_alias: str,
+    skill_name: str,
+    managed_dir: Path,
+) -> Path:
+    """SEP-2640 host-side install + activate, mirroring `/skills add`.
+
+    Pulls `skill_name` from the connected server's `skill://index.json`
+    registry, SHA-256-verifies and unpacks it into `managed_dir`, then
+    sets the agent's skill manifests/registry and rebuilds its
+    `<available_skills>` block + `read_skill` tool so the model can
+    activate the freshly-installed skill this run. Returns the install
+    path. Raises on missing registry / skill so the caller can fail the
+    run instead of testing an empty catalog.
+
+    The install is clean each run (managed_dir is wiped first) so the
+    full path — download → digest verify → unpack — is exercised every
+    time rather than silently reusing a prior artifact.
+    """
+    agent = app._agent(None)
+    aggregator = agent.aggregator
+
+    registries = await aggregator.list_mcp_skill_registries()
+    registry = next(
+        (r for r in registries if r.server_name == server_alias), None
+    )
+    if registry is None:
+        raise RuntimeError(
+            f"server {server_alias!r} exposes no SEP-2640 skills registry "
+            f"(missing io.modelcontextprotocol/skills extension or empty "
+            f"skill://index.json)"
+        )
+    skill = select_mcp_registry_skill(registry.skills, skill_name)
+    if skill is None:
+        available = ", ".join(s.name for s in registry.skills) or "(none)"
+        raise RuntimeError(
+            f"skill {skill_name!r} not found in {server_alias} registry "
+            f"(available: {available})"
+        )
+
+    if managed_dir.exists():
+        shutil.rmtree(managed_dir)
+    managed_dir.mkdir(parents=True, exist_ok=True)
+    install_path = await install_mcp_registry_skill(
+        aggregator, skill, destination_root=managed_dir
+    )
+
+    # Inject the installed skill into the live agent: set manifests +
+    # registry and rebuild the instruction. Without a CommandContext we
+    # replicate _refresh_agent_skills directly against the agent object.
+    skill_registry, manifests = reload_skill_manifests(
+        base_dir=managed_dir, override_directories=[managed_dir]
+    )
+    skills_text = format_skills_for_prompt(manifests, read_tool_name="read_skill")
+    await rebuild_agent_instruction(
+        agent,
+        skill_manifests=manifests,
+        skill_registry=skill_registry,
+        context={"agentSkills": skills_text},
+    )
+    if not manifests:
+        raise RuntimeError(
+            f"installed {skill_name!r} to {install_path} but no SKILL.md "
+            f"manifest loaded from {managed_dir} — <available_skills> "
+            f"would be empty"
+        )
+    return install_path
+
+
 @fast.agent(
     name="runner",
     # No custom instruction — fall through to fast-agent's default so
@@ -256,12 +351,36 @@ async def main() -> int:
         os.chdir(workdir)
         try:
             async with fast.run() as agent:
+                # SEP-2640 host-side install (evalstate/fast-agent main):
+                # for scenarios that declare `mcp_server.install_skill`,
+                # install + activate the skill before the prompt so it
+                # appears in <available_skills>. A failure here means the
+                # catalog would be empty, so we record the error and skip
+                # the send rather than test a no-op run.
+                if _INSTALL_SKILL:
+                    try:
+                        install_path = await _install_and_activate_skill(
+                            agent,
+                            server_alias=SERVER_ALIAS,
+                            skill_name=_INSTALL_SKILL,
+                            managed_dir=_MANAGED_SKILLS_DIR,
+                        )
+                        print(
+                            f"[skills] installed {_INSTALL_SKILL!r} -> "
+                            f"{install_path}",
+                            file=sys.stderr,
+                        )
+                    except Exception as exc:
+                        error = f"skill install failed: {type(exc).__name__}: {exc}"
+                        print(f"\n[skill install raised] {error}", file=sys.stderr)
+
                 start = time.monotonic()
-                try:
-                    response = await agent.send(PROMPT)
-                except Exception as exc:
-                    error = f"{type(exc).__name__}: {exc}"
-                    print(f"\n[fast-agent raised] {error}", file=sys.stderr)
+                if error is None:
+                    try:
+                        response = await agent.send(PROMPT)
+                    except Exception as exc:
+                        error = f"{type(exc).__name__}: {exc}"
+                        print(f"\n[fast-agent raised] {error}", file=sys.stderr)
                 elapsed = time.monotonic() - start
                 try:
                     calls = _extract_tool_calls(agent)

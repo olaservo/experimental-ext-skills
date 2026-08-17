@@ -1,17 +1,22 @@
 [project]
 name = "skills-e2e-fast-agent"
 version = "0.0.0"
-description = "Scenario #1 end-to-end harness for the Skills-over-MCP fast-agent fork"
+description = "Scenario #1 end-to-end harness for Skills-over-MCP on fast-agent (evalstate upstream main)"
 requires-python = ">=3.13.5,<3.15"
 dependencies = [
     "fast-agent-mcp",
     "pyyaml",
 ]
 
-# Git-dep against the fork branch carrying the skills-over-MCP changes.
+# Git-dep against evalstate upstream main, which carries the merged
+# SEP-2640 registry/install code (`src/fast_agent/skills/mcp_registry.py`,
+# commit 10a996b) plus the `get_resource` tool. The older olaservo fork
+# branch (experimental/skills-over-mcp-v2-base) predated the registry
+# merge and had no install path, so it couldn't consume the prod HF
+# server's digest-gated `skill://*.tar.gz` archives.
 # uv clones to its cache on first `uv sync`; subsequent runs reuse it
-# until the branch HEAD advances. For iteration against a local clone
-# of the fork, swap this for `{ path = "<abs-path>", editable = true }`
-# in your working tree (don't commit the override).
+# until the branch HEAD advances. For iteration against a local clone,
+# swap this for `{ path = "<abs-path>", editable = true }` in your
+# working tree (don't commit the override).
 [tool.uv.sources]
-fast-agent-mcp = { git = "https://github.com/olaservo/fast-agent.git", branch = "experimental/skills-over-mcp-v2" }
+fast-agent-mcp = { git = "https://github.com/evalstate/fast-agent.git", branch = "main" }

@@ -40,9 +40,9 @@ tool set are hardcoded in each harness since they're workflow invariants,
 not per-scenario knobs.
 
 **Per-client runners** live in each client's own fork (e.g.
-`olaservo/fast-agent:experimental/skills-over-mcp` has the Python runner
-at `scripts/skills_e2e_agent/`). They need the client's build system so
-they stay with the client.
+`olaservo/fast-agent:experimental/skills-over-mcp-v2-base` has the
+Python runner at `scripts/skills_e2e_agent/`). They need the
+client's build system so they stay with the client.
 
 **Scaffolding scripts** (that produce the PR under review) live in the
 subject repo — e.g. `olaservo/code-review-subject:scripts/create-pr-*.sh`.

@@ -15,6 +15,13 @@ scaffolding_script: experiments/code-review-subject/scripts/create-pr-input-vali
 mcp_server:
   endpoint: http://localhost:8082/mcp
   alias: github_skills
+  # SEP-2640 registry/install (evalstate/fast-agent main). The bundled
+  # `review-pr` skill is a `skill-md` entry in github-mcp-server's
+  # skill://index.json and now carries a sha256 digest (skills/registry.go),
+  # so the host installs it before the run: read SKILL.md → verify digest →
+  # write to a managed dir → surface in <available_skills>. Name matches the
+  # index entry / SKILL.md frontmatter `name`.
+  install_skill: review-pr
 
 # {pr_number} + {repo} are substituted by the client. The phrasing matches
 # the experiment doc template verbatim — do not paraphrase. `>-` folds the
@@ -62,3 +69,8 @@ models:
     #   z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
     openrouter: deepseek/deepseek-v4-pro
   codex: gpt-5.1-codex
+  # hermes picks a variant via HERMES_VARIANT (default: anthropic); the
+  # value is a combined provider/model slug (hermes encodes the provider
+  # in -m, so no separate provider flag). Override with HERMES_MODEL=<slug>.
+  hermes:
+    anthropic: anthropic/claude-sonnet-4-6

@@ -79,3 +79,8 @@ models:
     #   z-ai/glm-4.6           (Zhipu GLM, agentic coding focus)
     openrouter: deepseek/deepseek-v4-pro
   codex: gpt-5.1-codex
+  # hermes picks a variant via HERMES_VARIANT (default: anthropic); the
+  # value is a combined provider/model slug (hermes encodes the provider
+  # in -m, so no separate provider flag). Override with HERMES_MODEL=<slug>.
+  hermes:
+    anthropic: anthropic/claude-sonnet-4-6
